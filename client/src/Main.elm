@@ -12,6 +12,7 @@ import Element.Input as EI
 import Html exposing (Html)
 import Http
 import Json.Decode as D
+import Style exposing (..)
 
 
 
@@ -33,12 +34,19 @@ main =
 
 
 type alias Model =
-    List C.CodeBlock
+    { blocks : List C.CodeBlock
+    , counter_id : Maybe Int
+    }
+
+
+emptyModel : Model
+emptyModel =
+    Model [] Nothing
 
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( [], Cmd.none )
+    ( emptyModel, Cmd.none )
 
 
 
@@ -57,16 +65,17 @@ subscriptions _ =
 type Msg
     = Fetch
     | GotData (Result Http.Error (List C.CodeBlock))
+    | HoverCounterId (Maybe Int)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        GotData (Ok block) ->
-            ( block, Cmd.none )
+        GotData (Ok blocks) ->
+            ( { model | blocks = blocks }, Cmd.none )
 
         GotData (Err _) ->
-            ( [], Cmd.none )
+            ( model, Cmd.none )
 
         Fetch ->
             ( model
@@ -76,6 +85,11 @@ update msg model =
                 }
             )
 
+        HoverCounterId id ->
+            ( { model | counter_id = id }
+            , Cmd.none
+            )
+
 
 
 -- VIEW
@@ -83,31 +97,35 @@ update msg model =
 
 view : Model -> Html Msg
 view model =
-    E.layout [ Background.color (E.rgb255 0x1A 0x1F 0x29) ]
+    E.layout [ Background.color Style.bgDark ]
         (mainView model)
 
 
 mainView : Model -> E.Element Msg
 mainView model =
-    E.row [ E.alignTop, E.width E.fill, E.spacing 10, E.paddingEach { top = 10, right = 100, bottom = 100, left = 100 } ]
+    E.row [ E.alignTop, E.width E.fill, E.spacing normalSpacing, E.paddingEach { top = 10, right = 100, bottom = 100, left = 100 } ]
         [ getDataButton (Just Fetch) "load data"
-        , E.column [ E.width E.fill, E.centerX, E.spacing 10 ] (List.map codeBlockWrapper model)
+        , E.column
+            [ E.width E.fill, E.centerX, E.spacing largeSpacing ]
+            (List.map
+                (\block -> codeBlockWrapper (\id -> HoverCounterId id) block model.counter_id)
+                model.blocks
+            )
         ]
 
 
 getDataButton : Maybe msg -> String -> E.Element msg
 getDataButton attr title =
     EI.button
-        [ Border.rounded 3
-        , Border.width 2
-        , Border.color (E.rgb255 0x69 0x53 0x80)
+        [ Border.width 2
+        , Border.color actionColor
         , Background.color
-            (E.rgb255 0x69 0x53 0x80)
-        , Font.color (E.rgb255 0xCC 0xCA 0xC2)
+            actionColor
+        , Font.color fg
         , E.alignTop
-        , E.paddingXY 16 6
-        , E.mouseDown [ Background.color (E.rgb255 0x49 0x33 0x60) ]
-        , E.mouseOver [ Background.color (E.rgb255 0x59 0x43 0x70) ]
+        , E.paddingXY largeSpacing normalSpacing
+        , E.mouseDown [ Background.color actionPressColor ]
+        , E.mouseOver [ Background.color actionHoverColor ]
         , E.focused []
         ]
         { onPress = attr
@@ -115,10 +133,10 @@ getDataButton attr title =
         }
 
 
-codeBlockWrapper : C.CodeBlock -> E.Element msg
-codeBlockWrapper block =
+codeBlockWrapper : (Maybe Int -> msg) -> C.CodeBlock -> Maybe Int -> E.Element msg
+codeBlockWrapper msg block focused_id =
     E.el
         [ E.width E.fill
         , E.alignTop
         ]
-        (C.viewCodeBlock block)
+        (C.viewCodeBlock msg block focused_id)

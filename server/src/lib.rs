@@ -31,11 +31,14 @@ pub struct CodeBlock {
     pub title: String,
     pub file: String,
     pub lines: Vec<CodeLine>,
+    pub counter_ids: Vec<usize>,
 }
 
 impl fuzzcheck::CoverageMap {
     pub fn code_blocks(&self) -> Vec<CodeBlock> {
-        self.functions.iter().map(|f| f.code_block()).collect()
+        let mut code_blocks = self.functions.iter().map(|f| f.code_block()).collect::<Vec<_>>();
+        code_blocks.sort_by(|x, y| ((&x.file, x.lines[0].lineno)).cmp(&(&y.file, y.lines[0].lineno)));
+        code_blocks
     }
 }
 
@@ -57,6 +60,7 @@ impl fuzzcheck::Function {
                 title: self.name.clone(),
                 file: self.file.clone(),
                 lines: vec![],
+                counter_ids: vec![],
             };
         }
 
@@ -95,10 +99,15 @@ impl fuzzcheck::Function {
             }
             last_region = counter.region;
         }
+
+        let mut counter_ids = self.counters.iter().map(|c| c.id).collect::<Vec<_>>();
+        counter_ids.sort();
+
         CodeBlock {
             title: self.name.clone(),
             file: self.file.clone(),
             lines: code_lines,
+            counter_ids,
         }
     }
 }
