@@ -1,6 +1,6 @@
 module CoverageTests exposing (..)
 
-import Coverage exposing (CodeBlock, CodeSpan, CodeSpanKind(..))
+import Coverage exposing (..)
 import Expect exposing (Expectation)
 import Fuzz exposing (Fuzzer, int, list, string)
 import Json.Decode as D
@@ -46,8 +46,24 @@ decode =
                 \_ ->
                     let
                         json =
-                            "{ \"title\": \"the_title\", \"content\": [{\n      \"text\": \"3..=6\",\n      \"kind\": \"Untracked\"\n    }] }"
+                            """
+                            {
+                            "title": "_RNvCs9lNSP8NNRqe_10playground5hello",
+                            "file": "src/lib.rs",
+                            "lines": [
+                                {
+                                    "lineno": 1,
+                                    "spans": [
+                                        {
+                                        "text": "fn hello(xs: &[u8]) -> bool {",
+                                        "kind": "Untracked"
+                                        }
+                                    ]
+                                }
+                            ]
+                            }
+                            """
                     in
-                    Expect.equal (D.decodeString Coverage.decodeCodeBlock json) (Ok (CodeBlock "the_title" [ CodeSpan "3..=6" Untracked ]))
+                    Expect.equal (D.decodeString Coverage.decodeCodeBlock json) (Ok (CodeBlock "_RNvCs9lNSP8NNRqe_10playground5hello" "src/lib.rs" [ CodeLine 1 [ CodeSpan "fn hello(xs: &[u8]) -> bool {" Untracked ] ]))
             ]
         ]

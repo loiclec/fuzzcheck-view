@@ -33,12 +33,12 @@ main =
 
 
 type alias Model =
-    C.CodeBlock
+    List C.CodeBlock
 
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( C.emptyCodeBlock, Cmd.none )
+    ( [], Cmd.none )
 
 
 
@@ -56,7 +56,7 @@ subscriptions _ =
 
 type Msg
     = Fetch
-    | GotData (Result Http.Error C.CodeBlock)
+    | GotData (Result Http.Error (List C.CodeBlock))
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -66,13 +66,13 @@ update msg model =
             ( block, Cmd.none )
 
         GotData (Err _) ->
-            ( C.CodeBlock "error" "" [], Cmd.none )
+            ( [], Cmd.none )
 
         Fetch ->
             ( model
             , Http.get
-                { url = "code_block"
-                , expect = Http.expectJson GotData C.decodeCodeBlock
+                { url = "code_blocks"
+                , expect = Http.expectJson GotData (D.list C.decodeCodeBlock)
                 }
             )
 
@@ -91,7 +91,7 @@ mainView : Model -> E.Element Msg
 mainView model =
     E.row [ E.alignTop, E.width E.fill, E.spacing 10, E.paddingEach { top = 10, right = 100, bottom = 100, left = 100 } ]
         [ getDataButton (Just Fetch) "load data"
-        , E.el [ E.width E.fill, E.centerX ] (codeBlockWrapper model)
+        , E.column [ E.width E.fill, E.centerX, E.spacing 10 ] (List.map codeBlockWrapper model)
         ]
 
 

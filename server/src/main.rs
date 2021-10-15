@@ -17,11 +17,11 @@ fn text(data: &State<ManagedData>) -> String {
     format!("{:?}", data.inner().data)
 }
 
-#[get("/code_block")]
-fn code_block() -> Json<CodeBlock> {
+#[get("/code_blocks")]
+fn code_blocks() -> Json<Vec<CodeBlock>> {
     let map = include_bytes!("../../resources/coverage_map.json");
     let map: CoverageMap = serde_json::from_slice(map).unwrap();
-    let blocks = map.code_blocks()[0].clone();
+    let blocks = map.code_blocks();
     let serialized = serde_json::to_string_pretty(&blocks).unwrap();
     println!("{}", serialized);
     Json(blocks)
@@ -39,7 +39,7 @@ fn rocket() -> _ {
     let data = ManagedData { data: vec![3, 4] };
     rocket::build()
         .manage(data)
-        .mount("/", routes![index, text, code_block, files])
+        .mount("/", routes![index, text, code_blocks, files])
 }
 
 struct ManagedData {
