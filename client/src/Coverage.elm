@@ -44,10 +44,10 @@ emptyCodeBlock =
 
 viewCodeBlock : (Maybe Int -> msg) -> CodeBlock -> Maybe Int -> E.Element msg
 viewCodeBlock msg block focused_id =
-    E.column [ E.width E.fill ]
-        [ E.paragraph
-            [ Background.color fg, E.padding normalSpacing, Font.color bgCode, Font.size largeFontSize, Font.family codeFontFamily ]
-            [ E.text (block.title ++ " in " ++ block.file) ]
+    E.column [ E.width (E.fill |> E.maximum 800) ]
+        [ E.el
+            [ E.scrollbarX, E.width (E.fill |> E.maximum 800), Background.color fg, E.padding normalSpacing, Font.color bgCode, Font.size smallFontSize, Font.family codeFontFamily ]
+            (E.text (block.title ++ " in " ++ block.file))
         , viewCodeLines msg block.lines focused_id
         , viewCounterIds msg block focused_id
         ]
@@ -55,7 +55,16 @@ viewCodeBlock msg block focused_id =
 
 viewCounterIds : (Maybe Int -> msg) -> CodeBlock -> Maybe Int -> E.Element msg
 viewCounterIds msg block focused_id =
-    E.wrappedRow [ E.spacing normalSpacing, E.padding smallSpacing, E.width E.fill, Background.color altBgDark, Font.color fg, Font.size normalFontSize, Font.family codeFontFamily ]
+    E.wrappedRow
+        [ E.width (E.fill |> E.maximum 800)
+        , E.spacing normalSpacing
+        , E.padding smallSpacing
+        , E.width E.fill
+        , Background.color altBgDark
+        , Font.color fg
+        , Font.size smallFontSize
+        , Font.family codeFontFamily
+        ]
         (E.el [] (E.text "Counter IDs: ")
             :: List.map
                 (\id ->
@@ -76,21 +85,22 @@ viewCounterIds msg block focused_id =
 viewCodeLines : (Maybe Int -> msg) -> List CodeLine -> Maybe Int -> E.Element msg
 viewCodeLines msg lines focused_id =
     E.row
-        [ E.width E.fill
+        [ E.scrollbarX
+        , E.width (E.fill |> E.maximum 800)
         , Font.color fg
         , Font.size normalFontSize
         , Font.family
             codeFontFamily
         ]
-        [ E.column [ E.paddingXY smallSpacing normalSpacing, E.width E.shrink, E.spacing normalSpacing, Background.color lighterBgCode ] (List.map viewCodeLineNumber lines)
-        , E.column [ E.paddingXY smallSpacing normalSpacing, E.scrollbarX, E.width E.fill, E.spacing normalSpacing, Background.color bgCode ] (List.map (\line -> viewCodeLine msg line focused_id) lines)
+        [ E.column [ E.alignTop, E.paddingXY smallSpacing normalSpacing, E.width E.shrink, E.spacing normalSpacing, Background.color lighterBgCode ] (List.map viewCodeLineNumber lines)
+        , E.column [ E.alignTop, E.paddingXY smallSpacing normalSpacing, E.width E.fill, E.spacing normalSpacing, Background.color bgCode ] (List.map (\line -> viewCodeLine msg line focused_id) lines)
         ]
 
 
 viewCodeLineNumber : CodeLine -> E.Element msg
 viewCodeLineNumber line =
     E.el
-        [ E.paddingXY smallSpacing 0, E.alignRight ]
+        [ E.alignRight ]
         (E.text
             (String.fromInt line.lineno)
         )
@@ -100,9 +110,10 @@ viewCodeLine : (Maybe Int -> msg) -> CodeLine -> Maybe Int -> E.Element msg
 viewCodeLine msg line focused_id =
     E.row
         [ E.width E.fill ]
-        (List.map
-            (\span -> viewCodeSpan msg span focused_id)
-            line.spans
+        (E.text " "
+            :: List.map
+                (\span -> viewCodeSpan msg span focused_id)
+                line.spans
         )
 
 
@@ -130,7 +141,7 @@ viewTrackedCodeSpan msg kind id text focused_id =
                     codeSpanKindColor kind
             in
             if isCodeSpanKindFocused kind focused_id then
-                ( fg, color )
+                ( bgCode, color )
 
             else
                 ( color, makeTransparent color 0.2 )

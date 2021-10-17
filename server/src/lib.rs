@@ -3,7 +3,6 @@ pub mod fuzzcheck;
 
 use fuzzcheck::Counter;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 
 use crate::fuzzcheck::Region;
 
@@ -44,9 +43,7 @@ impl fuzzcheck::CoverageMap {
 
 impl fuzzcheck::Function {
     fn code_block(&self) -> CodeBlock {
-        let path = PathBuf::new()
-            .join("/Users/loic/Documents/playground/")
-            .join(&self.file);
+        let path = &self.file;
         let file = std::fs::read_to_string(&path).unwrap();
         let lines = file.lines().collect::<Box<[_]>>();
         let sorted_counters = {
@@ -58,14 +55,11 @@ impl fuzzcheck::Function {
         if sorted_counters.is_empty() {
             return CodeBlock {
                 title: self.name.clone(),
-                file: self.file.clone(),
+                file: format!("no counters for {} in {}", self.name, self.file.display()),
                 lines: vec![],
                 counter_ids: vec![],
             };
         }
-
-        let sorted_counters = split_counters_by_line(sorted_counters);
-
         let fst_lineno = sorted_counters[0].region.lines.0.saturating_sub(1);
         let last_lineno = sorted_counters.last().unwrap().region.lines.1;
 
@@ -77,35 +71,50 @@ impl fuzzcheck::Function {
             lines: (fst_lineno, fst_lineno),
             cols: (0, 0),
         };
-        for counter in sorted_counters {
-            let in_between = region_between_regions(&last_region, &counter.region);
-            if !region_is_empty(&in_between) {
-                let in_between = split_region_by_line(&in_between);
-                for r in in_between {
-                    code_lines[r.lines.0 - fst_lineno].spans.push(CodeSpan {
-                        text: string_in_region(&lines, &r),
-                        kind: CodeSpanKind::Untracked,
-                    })
+        for whole_counter in sorted_counters {
+            let counters = split_counter_by_line(whole_counter.clone());
+            for counter in counters {
+                let in_between = region_between_regions(&last_region, &counter.region);
+                if !region_is_empty(&in_between) {
+                    let in_between = split_region_by_line(&in_between);
+                    for r in in_between {
+                        code_lines[r.lines.0 - fst_lineno].spans.push(CodeSpan {
+                            text: string_in_region(&lines, &r),
+                            kind: CodeSpanKind::Untracked,
+                        })
+                    }
                 }
-            }
-            if !region_is_empty(&counter.region) {
                 let region = split_region_by_line(&counter.region);
                 for r in region {
-                    code_lines[r.lines.0 - fst_lineno].spans.push(CodeSpan {
-                        text: string_in_region(&lines, &r),
-                        kind: CodeSpanKind::NotHit { id: counter.id },
-                    })
+                    let text = string_in_region(&lines, &r);
+                    if text.is_empty() && whole_counter.region.lines.0 == whole_counter.region.lines.1 {
+                        code_lines[r.lines.0 - fst_lineno].spans.push(CodeSpan {
+                            text: " ".to_owned(),
+                            kind: CodeSpanKind::Untracked,
+                        });
+                        code_lines[r.lines.0 - fst_lineno].spans.push(CodeSpan {
+                            text: " ⦿ ".to_owned(),
+                            kind: CodeSpanKind::NotHit { id: counter.id },
+                        });
+                    } else {
+                        code_lines[r.lines.0 - fst_lineno].spans.push(CodeSpan {
+                            text,
+                            kind: CodeSpanKind::NotHit { id: counter.id },
+                        });
+                    }
                 }
+                last_region = counter.region;
             }
-            last_region = counter.region;
         }
 
         let mut counter_ids = self.counters.iter().map(|c| c.id).collect::<Vec<_>>();
         counter_ids.sort();
 
+        let demangled_name = rustc_demangle::demangle(&self.name);
+
         CodeBlock {
-            title: self.name.clone(),
-            file: self.file.clone(),
+            title: demangled_name.to_string(),
+            file: format!("{}", self.file.display()),
             lines: code_lines,
             counter_ids,
         }
@@ -119,6 +128,9 @@ fn string_in_region(lines: &[&str], region: &Region) -> String {
     } else {
         line_start
     };
+    if line_start >= lines.len() {
+        return format!("error: line_start ( {} ) > lines.len()", line_start);
+    }
     let col_start = region.cols.0.saturating_sub(1);
     let col_end = region.cols.1.saturating_sub(1);
 
@@ -158,33 +170,28 @@ fn region_between_regions(a: &Region, b: &Region) -> Region {
     }
 }
 fn region_is_empty(region: &Region) -> bool {
-    region.lines.1 <= region.lines.0 && region.cols.1 <= region.cols.0
+    region.lines.1 < region.lines.0 || (region.lines.1 == region.lines.0 && region.cols.1 <= region.cols.0)
 }
 
-fn split_counters_by_line(counters: Vec<Counter>) -> Vec<Counter> {
-    counters
-        .into_iter()
-        .flat_map(|c| {
-            let mut counters = vec![];
-            for l in c.region.lines.0..=c.region.lines.1 {
-                let start_col = if l == c.region.lines.0 { c.region.cols.0 } else { 0 };
-                let end_col = if l == c.region.lines.1 {
-                    c.region.cols.1
-                } else {
-                    usize::MAX
-                };
+fn split_counter_by_line(c: Counter) -> Vec<Counter> {
+    let mut counters = vec![];
+    for l in c.region.lines.0..=c.region.lines.1 {
+        let start_col = if l == c.region.lines.0 { c.region.cols.0 } else { 0 };
+        let end_col = if l == c.region.lines.1 {
+            c.region.cols.1
+        } else {
+            usize::MAX
+        };
 
-                counters.push(Counter {
-                    id: c.id,
-                    region: Region {
-                        lines: (l, l),
-                        cols: (start_col, end_col),
-                    },
-                })
-            }
-            counters
+        counters.push(Counter {
+            id: c.id,
+            region: Region {
+                lines: (l, l),
+                cols: (start_col, end_col),
+            },
         })
-        .collect()
+    }
+    counters
 }
 fn split_region_by_line(region: &Region) -> Vec<Region> {
     let mut regions = vec![];

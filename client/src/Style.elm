@@ -71,6 +71,11 @@ makeTransparent color opacity =
 -- Sizes
 
 
+smallFontSize : Int
+smallFontSize =
+    11
+
+
 normalFontSize : Int
 normalFontSize =
     13

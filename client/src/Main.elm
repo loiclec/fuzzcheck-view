@@ -2,6 +2,8 @@ module Main exposing (main)
 
 -- import Element.Events as Events
 
+import API
+import Array exposing (Array)
 import Browser
 import Coverage as C
 import Element as E
@@ -9,10 +11,14 @@ import Element.Background as Background
 import Element.Border as Border
 import Element.Font as Font
 import Element.Input as EI
+import FileSelect
 import Html exposing (Html)
 import Http
 import Json.Decode as D
+import MainModel exposing (..)
 import Style exposing (..)
+import Url
+import Url.Builder as UrlB
 
 
 
@@ -27,21 +33,6 @@ main =
         , subscriptions = subscriptions
         , view = view
         }
-
-
-
--- MODEL
-
-
-type alias Model =
-    { blocks : List C.CodeBlock
-    , counter_id : Maybe Int
-    }
-
-
-emptyModel : Model
-emptyModel =
-    Model [] Nothing
 
 
 init : () -> ( Model, Cmd Msg )
@@ -63,26 +54,72 @@ subscriptions _ =
 
 
 type Msg
-    = Fetch
-    | GotData (Result Http.Error (List C.CodeBlock))
+    = FetchFiles
+    | GotFiles (Result Http.Error (Array String))
+    | FileSelectMsg FileSelect.Msg
+    | FetchCodeBlocks
+    | GotCodeBlocks (Result Http.Error (List C.CodeBlock))
     | HoverCounterId (Maybe Int)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        GotData (Ok blocks) ->
+        GotCodeBlocks (Ok blocks) ->
             ( { model | blocks = blocks }, Cmd.none )
 
-        GotData (Err _) ->
+        GotCodeBlocks (Err _) ->
             ( model, Cmd.none )
 
-        Fetch ->
+        FetchFiles ->
+            ( model, Http.get { url = API.getListOfFiles, expect = Http.expectJson GotFiles (D.array D.string) } )
+
+        FileSelectMsg m ->
+            let
+                files =
+                    FileSelect.update m (FileSelect.Model model.all_files model.selected_file)
+            in
+            let
+                newModel =
+                    { model | all_files = files.all_files, selected_file = files.selected_file }
+            in
+            ( newModel
+            , let
+                optreq =
+                    API.getCodeBlocksUrl newModel
+              in
+              case optreq of
+                Just req ->
+                    Http.get
+                        { url = req
+                        , expect = Http.expectJson GotCodeBlocks (D.list C.decodeCodeBlock)
+                        }
+
+                Nothing ->
+                    Cmd.none
+            )
+
+        GotFiles (Ok files) ->
+            ( { model | all_files = files }, Cmd.none )
+
+        GotFiles (Err _) ->
+            ( model, Cmd.none )
+
+        FetchCodeBlocks ->
             ( model
-            , Http.get
-                { url = "code_blocks"
-                , expect = Http.expectJson GotData (D.list C.decodeCodeBlock)
-                }
+            , let
+                optreq =
+                    API.getCodeBlocksUrl model
+              in
+              case optreq of
+                Just req ->
+                    Http.get
+                        { url = req
+                        , expect = Http.expectJson GotCodeBlocks (D.list C.decodeCodeBlock)
+                        }
+
+                Nothing ->
+                    Cmd.none
             )
 
         HoverCounterId id ->
@@ -103,13 +140,22 @@ view model =
 
 mainView : Model -> E.Element Msg
 mainView model =
-    E.row [ E.alignTop, E.width E.fill, E.spacing normalSpacing, E.paddingEach { top = 10, right = 100, bottom = 100, left = 100 } ]
-        [ getDataButton (Just Fetch) "load data"
+    E.row [ E.width E.fill, E.alignTop, E.spacing normalSpacing, E.paddingEach { top = 10, right = 100, bottom = 100, left = 100 } ]
+        [ E.column [ E.alignTop, E.spacing normalSpacing, E.width (E.px 150) ]
+            [ getDataButton (Just FetchFiles) "load files"
+            , getDataButton (Just FetchCodeBlocks) "load data"
+            ]
         , E.column
-            [ E.width E.fill, E.centerX, E.spacing largeSpacing ]
-            (List.map
-                (\block -> codeBlockWrapper (\id -> HoverCounterId id) block model.counter_id)
-                model.blocks
+            [ E.alignTop, E.width (E.px 800), E.spacing largeSpacing ]
+            (E.map FileSelectMsg
+                (E.el [ E.scrollbars, E.height (E.px 100) ]
+                    (FileSelect.view
+                        { all_files = model.all_files, selected_file = model.selected_file }
+                    )
+                )
+                :: List.map
+                    (\block -> codeBlockWrapper (\id -> HoverCounterId id) block model.counter_id)
+                    model.blocks
             )
         ]
 
@@ -117,7 +163,8 @@ mainView model =
 getDataButton : Maybe msg -> String -> E.Element msg
 getDataButton attr title =
     EI.button
-        [ Border.width 2
+        [ E.width E.fill
+        , Border.width 2
         , Border.color actionColor
         , Background.color
             actionColor
