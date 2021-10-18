@@ -1,9 +1,9 @@
 module MainModel exposing (..)
 
 import Array exposing (Array)
-import Coverage
-import FileSelect
-import Set exposing (Set)
+import Coverage exposing (CodeBlock)
+import Layout
+import ListSelect
 
 
 
@@ -11,13 +11,27 @@ import Set exposing (Set)
 
 
 type alias Model =
-    { blocks : List Coverage.CodeBlock
+    { layout : Layout.Layout
+    , all_blocks : Array String
+    , selected_block : Maybe Int
+    , block : Maybe CodeBlock
     , all_files : Array String
     , selected_file : Maybe Int
     , counter_id : Maybe Int
+    , best_input : Maybe String
     }
 
 
 emptyModel : Model
 emptyModel =
-    Model [] Array.empty Nothing Nothing
+    Model Layout.initialLayout Array.empty Nothing Nothing Array.empty Nothing Nothing Nothing
+
+
+fileSelectModel : Model -> ListSelect.Model
+fileSelectModel model =
+    ListSelect.Model model.all_files model.selected_file
+
+
+functionSelectModel : Model -> ListSelect.Model
+functionSelectModel model =
+    ListSelect.Model model.all_blocks model.selected_block

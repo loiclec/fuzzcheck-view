@@ -2,7 +2,7 @@
 #[macro_use]
 extern crate rocket;
 
-use fuzzcheck_view::fuzzcheck::CoverageMap;
+use fuzzcheck_view::fuzzcheck::{read_input_corpus, CorpusMap, CoverageMap, SerializedUniqCov};
 use fuzzcheck_view::{CodeBlock, CodeSpan, CodeSpanKind};
 use rocket::serde::json::Json;
 use rocket::{fs::NamedFile, State};
@@ -20,12 +20,35 @@ fn files(state: &State<ManagedData>) -> Json<Vec<String>> {
 }
 
 #[get("/code_blocks?<file>")]
-fn code_blocks(state: &State<ManagedData>, file: String) -> Json<Vec<CodeBlock>> {
-    let mut result = vec![];
-    if let Some(blocks) = state.code_blocks.get(&file) {
-        result.extend_from_slice(blocks);
-    }
-    Json(result)
+fn code_blocks(state: &State<ManagedData>, file: String) -> Json<Vec<String>> {
+    let blocks = state.code_blocks.get(&file).unwrap();
+    let names = blocks.iter().map(|b| b.title.clone()).collect::<Vec<_>>();
+    Json(names)
+}
+
+#[get("/code_block?<file>&<function>")]
+fn code_block(state: &State<ManagedData>, file: String, function: String) -> Json<CodeBlock> {
+    let blocks = state.code_blocks.get(&file).unwrap();
+    let block = blocks.iter().find(|b| b.title == function).unwrap();
+    Json(block.clone())
+}
+
+#[get("/best_input?<counter>")]
+fn best_input_for_counter(state: &State<ManagedData>, counter: usize) -> Json<String> {
+    let pool_idx = state
+        .uniq_cov
+        .best_for_counter
+        .iter()
+        .find(|x| x.0 == counter)
+        .unwrap()
+        .1;
+    let name_input = &state.corpus_map.0.iter().find(|x| x.0 .1 == pool_idx).unwrap().1;
+    let data = state.all_inputs[name_input].clone();
+    // let string = String::from_utf8(data).unwrap();
+    // Json(string)
+    let decoded: Vec<serde_json::Value> = serde_json::from_slice(&data).unwrap();
+    let string: String = serde_json::from_value(decoded[1].clone()).unwrap();
+    Json(string)
 }
 
 // allow html to reference any file with path /static under folder "static"
@@ -38,11 +61,23 @@ async fn serve_static_file(file: PathBuf) -> Option<NamedFile> {
 fn rocket() -> _ {
     let args = std::env::args().collect::<Vec<_>>();
     let source_folder = Path::new(&args[1]).to_path_buf();
-    let stats_folder = Path::new(&args[2]);
+    let fuzz_test = args[2].clone();
+    let fuzz_folder = source_folder.join("fuzz").join(fuzz_test);
+    let stats_folder = fuzz_folder.join("stats");
+    let mut stats_folders = vec![];
+    for directory in std::fs::read_dir(stats_folder).unwrap() {
+        let directory = directory.unwrap();
+        if directory.file_type().unwrap().is_dir() {
+            stats_folders.push(directory.path());
+        }
+    }
+    let stats_folder = stats_folders.last().unwrap();
+
     println!("launching on {}", stats_folder.display());
 
     let coverage_map: CoverageMap = {
         let coverage_map_path = stats_folder.join("coverage_sensor.json");
+        println!("coverage map path: {}", coverage_map_path.display());
         let coverage_map =
             std::fs::read(&coverage_map_path).expect(&format!("can't read {}", coverage_map_path.display()));
         let mut coverage_map: CoverageMap = serde_json::from_slice(&coverage_map).expect("can't parse coverage map");
@@ -51,11 +86,17 @@ fn rocket() -> _ {
         });
         coverage_map
     };
-    let hit_counters: Vec<usize> = {
+    let uniq_cov: SerializedUniqCov = {
         let uniq_cov_path = stats_folder.join("uniq_cov.json");
         let uniq_cov = std::fs::read(&uniq_cov_path).expect(&format!("can't read {}", uniq_cov_path.display()));
         serde_json::from_slice(&uniq_cov).expect("can't parse uniq_cov")
     };
+    let corpus_map: CorpusMap = {
+        let uniq_cov_path = stats_folder.join("world.json");
+        let uniq_cov = std::fs::read(&uniq_cov_path).expect(&format!("can't read {}", uniq_cov_path.display()));
+        serde_json::from_slice(&uniq_cov).expect("can't parse world")
+    };
+    let all_inputs = read_input_corpus(&fuzz_folder.join("corpus"));
 
     let mut blocks = coverage_map.code_blocks();
 
@@ -65,7 +106,7 @@ fn rocket() -> _ {
                 match span.kind {
                     CodeSpanKind::Untracked => {}
                     CodeSpanKind::NotHit { id } | CodeSpanKind::Hit { id } => {
-                        if hit_counters.contains(&id) {
+                        if uniq_cov.all_hit_counters.contains(&id) {
                             span.kind = CodeSpanKind::Hit { id };
                         } else {
                             span.kind = CodeSpanKind::NotHit { id };
@@ -84,17 +125,29 @@ fn rocket() -> _ {
 
     let data = ManagedData {
         coverage_map,
-        hit_counters,
+        uniq_cov,
         code_blocks: code_blocks_by_file,
+        corpus_map,
+        all_inputs,
     };
 
-    rocket::build()
-        .manage(data)
-        .mount("/", routes![index, files, code_blocks, serve_static_file])
+    rocket::build().manage(data).mount(
+        "/",
+        routes![
+            index,
+            files,
+            code_blocks,
+            code_block,
+            best_input_for_counter,
+            serve_static_file
+        ],
+    )
 }
 
 struct ManagedData {
     coverage_map: CoverageMap,
     code_blocks: HashMap<String, Vec<CodeBlock>>,
-    hit_counters: Vec<usize>,
+    uniq_cov: SerializedUniqCov,
+    corpus_map: CorpusMap,
+    all_inputs: HashMap<String, Vec<u8>>,
 }

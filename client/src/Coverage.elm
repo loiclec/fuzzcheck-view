@@ -1,13 +1,12 @@
 module Coverage exposing (..)
 
-import Element as E exposing (rgb255)
+import Element as E
 import Element.Background as Background
 import Element.Border as Border
 import Element.Events as EE
 import Element.Font as Font
-import Html
-import Html.Events exposing (onMouseEnter)
 import Json.Decode as D
+import Layout exposing (Layout)
 import Style exposing (..)
 
 
@@ -37,29 +36,33 @@ type CodeSpanKind
     | Hit Int
 
 
+type Msg
+    = UnselectCounter
+    | SelectCounter Int
+
+
 emptyCodeBlock : CodeBlock
 emptyCodeBlock =
     CodeBlock "empty" "" [] []
 
 
-viewCodeBlock : (Maybe Int -> msg) -> CodeBlock -> Maybe Int -> E.Element msg
-viewCodeBlock msg block focused_id =
-    E.column [ E.width (E.fill |> E.maximum 800) ]
-        [ E.el
-            [ E.scrollbarX, E.width (E.fill |> E.maximum 800), Background.color fg, E.padding normalSpacing, Font.color bgCode, Font.size smallFontSize, Font.family codeFontFamily ]
-            (E.text (block.title ++ " in " ++ block.file))
-        , viewCodeLines msg block.lines focused_id
-        , viewCounterIds msg block focused_id
+viewCodeBlock : { a | block : CodeBlock, layout : Layout, focused_id : Maybe Int } -> E.Element Msg
+viewCodeBlock model =
+    E.column [ E.width E.fill ]
+        [ E.paragraph
+            [ E.width E.fill, Background.color fg, E.padding normalSpacing, Font.color bgCode, Font.size smallFontSize, Font.family codeFontFamily ]
+            [ E.text (model.block.title ++ " in " ++ model.block.file) ]
+        , viewCodeLines model
+        , viewCounterIds model
         ]
 
 
-viewCounterIds : (Maybe Int -> msg) -> CodeBlock -> Maybe Int -> E.Element msg
-viewCounterIds msg block focused_id =
+viewCounterIds : { a | block : CodeBlock, layout : Layout, focused_id : Maybe Int } -> E.Element Msg
+viewCounterIds model =
     E.wrappedRow
         [ E.width (E.fill |> E.maximum 800)
         , E.spacing normalSpacing
         , E.padding smallSpacing
-        , E.width E.fill
         , Background.color altBgDark
         , Font.color fg
         , Font.size smallFontSize
@@ -70,20 +73,20 @@ viewCounterIds msg block focused_id =
                 (\id ->
                     let
                         ( fgColor, bgColor ) =
-                            if isCounterFocused id focused_id then
+                            if isCounterFocused id model.focused_id then
                                 ( bgCode, fg )
 
                             else
                                 ( fg, lighterBgCode )
                     in
-                    E.el [ E.pointer, E.padding smallSpacing, Border.rounded 3, Font.color fgColor, Background.color bgColor, EE.onMouseEnter (msg (Just id)), EE.onMouseLeave (msg Nothing) ] (E.text (String.fromInt id))
+                    E.el [ E.pointer, E.padding smallSpacing, Border.rounded 3, Font.color fgColor, Background.color bgColor, EE.onMouseEnter (SelectCounter id), EE.onMouseLeave UnselectCounter ] (E.text (String.fromInt id))
                 )
-                block.counter_ids
+                model.block.counter_ids
         )
 
 
-viewCodeLines : (Maybe Int -> msg) -> List CodeLine -> Maybe Int -> E.Element msg
-viewCodeLines msg lines focused_id =
+viewCodeLines : { a | block : CodeBlock, layout : Layout, focused_id : Maybe Int } -> E.Element Msg
+viewCodeLines { block, layout, focused_id } =
     E.row
         [ E.scrollbarX
         , E.width (E.fill |> E.maximum 800)
@@ -92,8 +95,8 @@ viewCodeLines msg lines focused_id =
         , Font.family
             codeFontFamily
         ]
-        [ E.column [ E.alignTop, E.paddingXY smallSpacing normalSpacing, E.width E.shrink, E.spacing normalSpacing, Background.color lighterBgCode ] (List.map viewCodeLineNumber lines)
-        , E.column [ E.alignTop, E.paddingXY smallSpacing normalSpacing, E.width E.fill, E.spacing normalSpacing, Background.color bgCode ] (List.map (\line -> viewCodeLine msg line focused_id) lines)
+        [ E.column [ E.alignTop, E.paddingXY smallSpacing normalSpacing, E.width E.shrink, E.spacing normalSpacing, Background.color lighterBgCode ] (List.map viewCodeLineNumber block.lines)
+        , E.column [ E.alignTop, E.paddingXY smallSpacing normalSpacing, E.width E.fill, E.spacing normalSpacing, Background.color bgCode ] (List.map (\line -> viewCodeLine { block = block, layout = layout, focused_id = focused_id, line = line }) block.lines)
         ]
 
 
@@ -106,19 +109,19 @@ viewCodeLineNumber line =
         )
 
 
-viewCodeLine : (Maybe Int -> msg) -> CodeLine -> Maybe Int -> E.Element msg
-viewCodeLine msg line focused_id =
+viewCodeLine : { a | block : CodeBlock, layout : Layout, focused_id : Maybe Int, line : CodeLine } -> E.Element Msg
+viewCodeLine { block, layout, focused_id, line } =
     E.row
         [ E.width E.fill ]
         (E.text " "
             :: List.map
-                (\span -> viewCodeSpan msg span focused_id)
+                (\span -> viewCodeSpan { block = block, layout = layout, focused_id = focused_id, span = span })
                 line.spans
         )
 
 
-viewCodeSpan : (Maybe Int -> msg) -> CodeSpan -> Maybe Int -> E.Element msg
-viewCodeSpan msg span focused_id =
+viewCodeSpan : { a | block : CodeBlock, layout : Layout, focused_id : Maybe Int, span : CodeSpan } -> E.Element Msg
+viewCodeSpan { block, layout, focused_id, span } =
     case span.kind of
         Untracked ->
             E.el
@@ -126,21 +129,21 @@ viewCodeSpan msg span focused_id =
                 (E.text span.text)
 
         NotHit id ->
-            viewTrackedCodeSpan msg span.kind id span.text focused_id
+            viewTrackedCodeSpan { block = block, layout = layout, focused_id = focused_id, span = span, id = id }
 
         Hit id ->
-            viewTrackedCodeSpan msg span.kind id span.text focused_id
+            viewTrackedCodeSpan { block = block, layout = layout, focused_id = focused_id, span = span, id = id }
 
 
-viewTrackedCodeSpan : (Maybe Int -> msg) -> CodeSpanKind -> Int -> String -> Maybe Int -> E.Element msg
-viewTrackedCodeSpan msg kind id text focused_id =
+viewTrackedCodeSpan : { a | block : CodeBlock, layout : Layout, focused_id : Maybe Int, span : CodeSpan, id : Int } -> E.Element Msg
+viewTrackedCodeSpan model =
     let
         ( fgColor, bgColor ) =
             let
                 color =
-                    codeSpanKindColor kind
+                    codeSpanKindColor model.span.kind
             in
-            if isCodeSpanKindFocused kind focused_id then
+            if isCodeSpanKindFocused model.span.kind model.focused_id then
                 ( bgCode, color )
 
             else
@@ -150,10 +153,10 @@ viewTrackedCodeSpan msg kind id text focused_id =
         [ E.pointer
         , Font.color fgColor
         , Background.color bgColor
-        , EE.onMouseEnter (msg (Just id))
-        , EE.onMouseLeave (msg Nothing)
+        , EE.onMouseEnter (SelectCounter model.id)
+        , EE.onMouseLeave UnselectCounter
         ]
-        (E.text text)
+        (E.text model.span.text)
 
 
 codeSpanKindColor : CodeSpanKind -> E.Color

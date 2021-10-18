@@ -5,20 +5,22 @@ module Main exposing (main)
 import API
 import Array exposing (Array)
 import Browser
-import Coverage as C
-import Element as E
+import Browser.Dom
+import Browser.Events
+import Coverage as C exposing (CodeBlock, Msg(..))
+import Element as E exposing (layout)
 import Element.Background as Background
-import Element.Border as Border
 import Element.Font as Font
-import Element.Input as EI
-import FileSelect
+import Helpers
 import Html exposing (Html)
+import Html.Attributes as HA
 import Http
 import Json.Decode as D
+import Layout exposing (Layout)
+import ListSelect
 import MainModel exposing (..)
 import Style exposing (..)
-import Url
-import Url.Builder as UrlB
+import Task
 
 
 
@@ -37,7 +39,7 @@ main =
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( emptyModel, Cmd.none )
+    ( emptyModel, Cmd.batch [ Task.perform (\vp -> Resize (round vp.viewport.width) (round vp.viewport.height)) Browser.Dom.getViewport, Http.get { url = API.getListOfFiles, expect = Http.expectJson GotFiles (D.array D.string) } ] )
 
 
 
@@ -46,7 +48,30 @@ init _ =
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
-    Sub.none
+    Sub.batch [ Browser.Events.onKeyDown keyDecoder, Browser.Events.onResize Resize ]
+
+
+keyDecoder : D.Decoder Msg
+keyDecoder =
+    D.map
+        (\key ->
+            case key of
+                "a" ->
+                    PreviousFile
+
+                "s" ->
+                    NextFile
+
+                "k" ->
+                    PreviousFunction
+
+                "l" ->
+                    NextFunction
+
+                _ ->
+                    NoMsg
+        )
+        (D.field "key" D.string)
 
 
 
@@ -54,78 +79,154 @@ subscriptions _ =
 
 
 type Msg
-    = FetchFiles
+    = Resize Int Int
+    | PreviousFile
+    | NextFile
+    | PreviousFunction
+    | NextFunction
+    | NoMsg
+    | FetchFiles
     | GotFiles (Result Http.Error (Array String))
-    | FileSelectMsg FileSelect.Msg
-    | FetchCodeBlocks
-    | GotCodeBlocks (Result Http.Error (List C.CodeBlock))
+    | GotFunctions (Result Http.Error (Array String))
+    | FileSelect ListSelect.Msg
+    | FunctionSelect ListSelect.Msg
+    | FetchCodeBlock
+    | GotCodeBlock (Result Http.Error C.CodeBlock)
     | HoverCounterId (Maybe Int)
+    | GotBestInputForCounterId (Result Http.Error String)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        GotCodeBlocks (Ok blocks) ->
-            ( { model | blocks = blocks }, Cmd.none )
-
-        GotCodeBlocks (Err _) ->
+        NoMsg ->
             ( model, Cmd.none )
+
+        Resize width height ->
+            ( { model | layout = Layout.layoutForWidthAndHeight width height }, Cmd.none )
+
+        PreviousFile ->
+            let
+                newModel =
+                    { model
+                        | selected_file = Helpers.prevInt model.selected_file
+                    }
+            in
+            ( newModel
+            , API.getListOfBlocksCmd GotFunctions newModel
+            )
+
+        NextFile ->
+            let
+                newModel =
+                    { model
+                        | selected_file = Helpers.nextInt (Array.length model.all_files) model.selected_file
+                    }
+            in
+            ( newModel
+            , API.getListOfBlocksCmd GotFunctions newModel
+            )
+
+        PreviousFunction ->
+            let
+                newModel =
+                    { model
+                        | selected_block = Helpers.prevInt model.selected_block
+                    }
+            in
+            ( newModel
+            , API.getCodeBlockCmd GotCodeBlock newModel
+            )
+
+        NextFunction ->
+            let
+                newModel =
+                    { model
+                        | selected_block = Helpers.nextInt (Array.length model.all_blocks) model.selected_block
+                    }
+            in
+            ( newModel
+            , API.getCodeBlockCmd GotCodeBlock newModel
+            )
+
+        GotCodeBlock (Ok block) ->
+            ( { model | block = Just block }, Cmd.none )
+
+        GotCodeBlock (Err _) ->
+            ( { model | block = Nothing }, Cmd.none )
 
         FetchFiles ->
             ( model, Http.get { url = API.getListOfFiles, expect = Http.expectJson GotFiles (D.array D.string) } )
 
-        FileSelectMsg m ->
+        GotFunctions (Ok functions) ->
+            let
+                newModel =
+                    { model | all_blocks = functions, selected_block = Just 0 }
+            in
+            ( newModel, API.getCodeBlockCmd GotCodeBlock newModel )
+
+        GotFunctions (Err _) ->
+            ( { model | all_blocks = Array.empty }, Cmd.none )
+
+        FileSelect m ->
             let
                 files =
-                    FileSelect.update m (FileSelect.Model model.all_files model.selected_file)
+                    ListSelect.update m (MainModel.fileSelectModel model)
             in
             let
                 newModel =
-                    { model | all_files = files.all_files, selected_file = files.selected_file }
+                    { model | all_files = files.all_items, selected_file = files.selected_item }
             in
             ( newModel
-            , let
-                optreq =
-                    API.getCodeBlocksUrl newModel
-              in
-              case optreq of
-                Just req ->
-                    Http.get
-                        { url = req
-                        , expect = Http.expectJson GotCodeBlocks (D.list C.decodeCodeBlock)
-                        }
+            , API.getListOfBlocksCmd GotFunctions newModel
+            )
 
-                Nothing ->
-                    Cmd.none
+        FunctionSelect m ->
+            let
+                functions =
+                    ListSelect.update m (MainModel.functionSelectModel model)
+            in
+            let
+                newModel =
+                    { model | selected_block = functions.selected_item }
+            in
+            ( newModel
+            , API.getCodeBlockCmd GotCodeBlock newModel
             )
 
         GotFiles (Ok files) ->
-            ( { model | all_files = files }, Cmd.none )
+            let
+                newModel =
+                    { model | all_files = files, selected_file = Just 0 }
+            in
+            ( newModel, API.getListOfBlocksCmd GotFunctions newModel )
 
         GotFiles (Err _) ->
             ( model, Cmd.none )
 
-        FetchCodeBlocks ->
+        FetchCodeBlock ->
             ( model
-            , let
-                optreq =
-                    API.getCodeBlocksUrl model
-              in
-              case optreq of
-                Just req ->
-                    Http.get
-                        { url = req
-                        , expect = Http.expectJson GotCodeBlocks (D.list C.decodeCodeBlock)
+            , API.getCodeBlockCmd GotCodeBlock model
+            )
+
+        HoverCounterId optid ->
+            case optid of
+                Just id ->
+                    ( { model | counter_id = optid, best_input = Nothing }
+                    , Http.get
+                        { url = API.getBestInputForCounter id
+                        , expect = Http.expectJson GotBestInputForCounterId D.string
                         }
+                    )
 
                 Nothing ->
-                    Cmd.none
-            )
+                    ( { model | counter_id = optid }, Cmd.none )
 
-        HoverCounterId id ->
-            ( { model | counter_id = id }
-            , Cmd.none
-            )
+        GotBestInputForCounterId (Ok text) ->
+            ( { model | best_input = Just text }, Cmd.none )
+
+        GotBestInputForCounterId (Err _) ->
+            ( { model | best_input = Just "error" }, Cmd.none )
 
 
 
@@ -140,50 +241,66 @@ view model =
 
 mainView : Model -> E.Element Msg
 mainView model =
-    E.row [ E.width E.fill, E.alignTop, E.spacing normalSpacing, E.paddingEach { top = 10, right = 100, bottom = 100, left = 100 } ]
-        [ E.column [ E.alignTop, E.spacing normalSpacing, E.width (E.px 150) ]
-            [ getDataButton (Just FetchFiles) "load files"
-            , getDataButton (Just FetchCodeBlocks) "load data"
-            ]
-        , E.column
-            [ E.alignTop, E.width (E.px 800), E.spacing largeSpacing ]
-            (E.map FileSelectMsg
-                (E.el [ E.scrollbars, E.height (E.px 100) ]
-                    (FileSelect.view
-                        { all_files = model.all_files, selected_file = model.selected_file }
+    E.column [ E.alignTop, E.width E.fill, E.spacing largeSpacing, E.padding model.layout.padding, E.height (E.shrink |> E.minimum (model.layout.height + 200)) ]
+        [ E.row [ E.alignTop, E.width E.fill, E.spacing model.layout.column_sep ]
+            [ E.column [ E.spacing normalSpacing, E.alignTop, E.width (E.px model.layout.column_width) ]
+                [ E.row [ E.padding normalSpacing, E.width E.fill, Background.color fg, Font.family codeFontFamily, Font.color bgCode, Font.size largeFontSize ]
+                    [ E.el [ E.alignLeft ] (E.text "Files"), E.el [ Font.size smallFontSize, E.alignRight ] (E.text "'a': previous    's': next") ]
+                , E.el [ E.height (E.shrink |> E.maximum 140), E.width (E.fill |> E.minimum model.layout.column_width) ]
+                    (E.map FileSelect
+                        (ListSelect.view
+                            (MainModel.fileSelectModel model)
+                        )
                     )
+                ]
+            , E.column [ E.spacing normalSpacing, E.alignTop, E.width (E.px model.layout.column_width) ]
+                [ E.row [ E.padding normalSpacing, E.width E.fill, Background.color fg, Font.family codeFontFamily, Font.color bgCode, Font.size largeFontSize ]
+                    [ E.el [ E.alignLeft ] (E.text "Functions"), E.el [ Font.size smallFontSize, E.alignRight ] (E.text "'a': previous    's': next") ]
+                , E.el [ E.height (E.shrink |> E.maximum 140), E.width (E.px model.layout.column_width) ]
+                    (E.map FunctionSelect
+                        (ListSelect.view
+                            (MainModel.functionSelectModel
+                                model
+                            )
+                        )
+                    )
+                ]
+            ]
+        , E.row [ E.alignTop, E.width E.fill, E.alignTop, E.spacing largeSpacing ]
+            [ E.el [ E.alignTop, E.width E.fill ]
+                (Maybe.withDefault
+                    E.none
+                    (Maybe.map (\block -> codeBlockWrapper { block = block, layout = model.layout, focused_id = model.counter_id }) model.block)
                 )
-                :: List.map
-                    (\block -> codeBlockWrapper (\id -> HoverCounterId id) block model.counter_id)
-                    model.blocks
-            )
+            , E.paragraph [ E.alignTop, E.htmlAttribute (HA.style "position" "sticky"), E.htmlAttribute (HA.style "position" "-webkit-sticky"), E.htmlAttribute (HA.style "right" "0"), E.htmlAttribute (HA.style "top" "10px"), E.alignRight, E.alignTop, E.width E.fill, E.padding largeSpacing, Background.color fg, Font.color bgCode, Font.family codeFontFamily, Font.size largeFontSize, E.spacing normalSpacing ]
+                [ E.text
+                    (case model.best_input of
+                        Just text ->
+                            text
+
+                        Nothing ->
+                            ""
+                    )
+                ]
+            ]
+        , E.el [ E.height E.fill, E.width E.fill ] E.none
         ]
 
 
-getDataButton : Maybe msg -> String -> E.Element msg
-getDataButton attr title =
-    EI.button
-        [ E.width E.fill
-        , Border.width 2
-        , Border.color actionColor
-        , Background.color
-            actionColor
-        , Font.color fg
-        , E.alignTop
-        , E.paddingXY largeSpacing normalSpacing
-        , E.mouseDown [ Background.color actionPressColor ]
-        , E.mouseOver [ Background.color actionHoverColor ]
-        , E.focused []
-        ]
-        { onPress = attr
-        , label = E.text title
-        }
+codeBlockWrapper : { a | block : CodeBlock, layout : Layout, focused_id : Maybe Int } -> E.Element Msg
+codeBlockWrapper { block, layout, focused_id } =
+    E.map
+        (\msg ->
+            case msg of
+                SelectCounter id ->
+                    HoverCounterId (Just id)
 
-
-codeBlockWrapper : (Maybe Int -> msg) -> C.CodeBlock -> Maybe Int -> E.Element msg
-codeBlockWrapper msg block focused_id =
-    E.el
-        [ E.width E.fill
-        , E.alignTop
-        ]
-        (C.viewCodeBlock msg block focused_id)
+                UnselectCounter ->
+                    HoverCounterId Nothing
+        )
+        (E.el
+            [ E.width E.fill
+            , E.alignTop
+            ]
+            (C.viewCodeBlock { block = block, layout = layout, focused_id = focused_id })
+        )
