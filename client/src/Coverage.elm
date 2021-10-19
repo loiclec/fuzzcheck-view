@@ -10,6 +10,12 @@ import Layout exposing (Layout)
 import Style exposing (..)
 
 
+type alias FunctionName =
+    { name : String
+    , demangled_name : String
+    }
+
+
 type alias CodeBlock =
     { title : String
     , file : String
@@ -41,12 +47,16 @@ type Msg
     | SelectCounter Int
 
 
+type alias CodeBlockData a =
+    { a | block : CodeBlock, layout : Layout, focused_id : Maybe Int }
+
+
 emptyCodeBlock : CodeBlock
 emptyCodeBlock =
     CodeBlock "empty" "" [] []
 
 
-viewCodeBlock : { a | block : CodeBlock, layout : Layout, focused_id : Maybe Int } -> E.Element Msg
+viewCodeBlock : CodeBlockData a -> E.Element Msg
 viewCodeBlock model =
     E.column [ E.width E.fill ]
         [ E.paragraph
@@ -57,7 +67,7 @@ viewCodeBlock model =
         ]
 
 
-viewCounterIds : { a | block : CodeBlock, layout : Layout, focused_id : Maybe Int } -> E.Element Msg
+viewCounterIds : CodeBlockData a -> E.Element Msg
 viewCounterIds model =
     E.wrappedRow
         [ E.width (E.fill |> E.maximum 800)
@@ -85,7 +95,7 @@ viewCounterIds model =
         )
 
 
-viewCodeLines : { a | block : CodeBlock, layout : Layout, focused_id : Maybe Int } -> E.Element Msg
+viewCodeLines : CodeBlockData a -> E.Element Msg
 viewCodeLines { block, layout, focused_id } =
     E.row
         [ E.scrollbarX
@@ -109,7 +119,7 @@ viewCodeLineNumber line =
         )
 
 
-viewCodeLine : { a | block : CodeBlock, layout : Layout, focused_id : Maybe Int, line : CodeLine } -> E.Element Msg
+viewCodeLine : CodeBlockData { a | line : CodeLine } -> E.Element Msg
 viewCodeLine { block, layout, focused_id, line } =
     E.row
         [ E.width E.fill ]
@@ -120,7 +130,7 @@ viewCodeLine { block, layout, focused_id, line } =
         )
 
 
-viewCodeSpan : { a | block : CodeBlock, layout : Layout, focused_id : Maybe Int, span : CodeSpan } -> E.Element Msg
+viewCodeSpan : CodeBlockData { a | span : CodeSpan } -> E.Element Msg
 viewCodeSpan { block, layout, focused_id, span } =
     case span.kind of
         Untracked ->
@@ -135,7 +145,7 @@ viewCodeSpan { block, layout, focused_id, span } =
             viewTrackedCodeSpan { block = block, layout = layout, focused_id = focused_id, span = span, id = id }
 
 
-viewTrackedCodeSpan : { a | block : CodeBlock, layout : Layout, focused_id : Maybe Int, span : CodeSpan, id : Int } -> E.Element Msg
+viewTrackedCodeSpan : CodeBlockData { a | span : CodeSpan, id : Int } -> E.Element Msg
 viewTrackedCodeSpan model =
     let
         ( fgColor, bgColor ) =
@@ -230,6 +240,13 @@ decodeCodeSpan =
         )
 
 
+{-| Decodes a FunctionName
+-}
+decodeFunctionName : D.Decoder FunctionName
+decodeFunctionName =
+    D.map2 FunctionName (D.field "name" D.string) (D.field "demangled_name" D.string)
+
+
 {-| Decodes a CodeLine
 -}
 decodeCodeLine : D.Decoder CodeLine
@@ -237,12 +254,12 @@ decodeCodeLine =
     D.map2 CodeLine (D.field "lineno" D.int) (D.field "spans" (D.list decodeCodeSpan))
 
 
-{-| Decodes a CodeBlock
+{-| Decodes a FunctionCoverage
 -}
-decodeCodeBlock : D.Decoder CodeBlock
-decodeCodeBlock =
+decodeFunctionCoverage : D.Decoder CodeBlock
+decodeFunctionCoverage =
     D.map4 CodeBlock
-        (D.field "title" D.string)
+        (D.map .demangled_name (D.field "name" decodeFunctionName))
         (D.field "file" D.string)
         (D.field "lines" (D.list decodeCodeLine))
         (D.field "counter_ids" (D.list D.int))

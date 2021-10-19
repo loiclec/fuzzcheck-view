@@ -57,10 +57,10 @@ view model =
                                         model.selected_item
                                             == Just i
                                     then
-                                        [ Background.color (makeTransparent green 0.2), E.mouseOver [ Background.color (makeTransparent green 0.3) ] ]
+                                        [ Background.color (makeTransparent green 0.3), E.mouseOver [ Background.color (makeTransparent green 0.5) ] ]
 
                                     else
-                                        [ Background.color (makeTransparent red 0.2), E.mouseOver [ Background.color (makeTransparent red 0.3) ] ]
+                                        [ Background.color (makeTransparent red 0.3), E.mouseOver [ Background.color (makeTransparent red 0.5) ] ]
                                    )
                             )
                             { onChange =
@@ -81,7 +81,7 @@ view model =
                                 model.selected_item
                                     == Just i
                             , label =
-                                EI.labelRight []
+                                EI.labelRight [ E.width E.fill ]
                                     (E.paragraph [ E.spacing smallSpacing ] [ E.text x ])
                             }
                 )

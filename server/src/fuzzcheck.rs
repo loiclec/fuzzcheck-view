@@ -5,7 +5,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::CodeBlock;
+use crate::FunctionCoverage;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CoverageMap {

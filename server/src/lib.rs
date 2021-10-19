@@ -2,6 +2,7 @@
 pub mod fuzzcheck;
 
 use fuzzcheck::Counter;
+use rocket::form::FromFormField;
 use serde::{Deserialize, Serialize};
 
 use crate::fuzzcheck::Region;
@@ -26,24 +27,51 @@ pub struct CodeSpan {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CodeBlock {
-    pub title: String,
+pub struct FunctionCoverage {
+    pub name: FunctionName,
     pub file: String,
     pub lines: Vec<CodeLine>,
     pub counter_ids: Vec<usize>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct FunctionName {
+    pub name: String,
+    pub demangled_name: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum CoverageFilter {
+    All,
+    Input(usize),
+}
+
+impl CoverageFilter {
+    pub fn from_string(s: &str) -> Option<Self> {
+        match s {
+            "all" => Some(CoverageFilter::All),
+            s => s.parse().ok().map(CoverageFilter::Input),
+        }
+    }
+}
+
 impl fuzzcheck::CoverageMap {
-    pub fn code_blocks(&self) -> Vec<CodeBlock> {
-        let mut code_blocks = self.functions.iter().map(|f| f.code_block()).collect::<Vec<_>>();
+    pub fn functions(&self) -> Vec<FunctionCoverage> {
+        let mut code_blocks = self.functions.iter().map(|f| f.coverage()).collect::<Vec<_>>();
         code_blocks.sort_by(|x, y| ((&x.file, x.lines[0].lineno)).cmp(&(&y.file, y.lines[0].lineno)));
         code_blocks
     }
 }
 
 impl fuzzcheck::Function {
-    fn code_block(&self) -> CodeBlock {
+    pub fn coverage(&self) -> FunctionCoverage {
         let path = &self.file;
+
+        let name = FunctionName {
+            name: self.name.clone(),
+            demangled_name: rustc_demangle::demangle(&self.name).to_string(),
+        };
+
         let file = std::fs::read_to_string(&path).unwrap();
         let lines = file.lines().collect::<Box<[_]>>();
         let sorted_counters = {
@@ -53,8 +81,8 @@ impl fuzzcheck::Function {
         };
 
         if sorted_counters.is_empty() {
-            return CodeBlock {
-                title: self.name.clone(),
+            return FunctionCoverage {
+                name,
                 file: format!("no counters for {} in {}", self.name, self.file.display()),
                 lines: vec![],
                 counter_ids: vec![],
@@ -110,10 +138,8 @@ impl fuzzcheck::Function {
         let mut counter_ids = self.counters.iter().map(|c| c.id).collect::<Vec<_>>();
         counter_ids.sort();
 
-        let demangled_name = rustc_demangle::demangle(&self.name);
-
-        CodeBlock {
-            title: demangled_name.to_string(),
+        FunctionCoverage {
+            name,
             file: format!("{}", self.file.display()),
             lines: code_lines,
             counter_ids,

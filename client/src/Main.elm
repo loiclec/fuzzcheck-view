@@ -7,10 +7,11 @@ import Array exposing (Array)
 import Browser
 import Browser.Dom
 import Browser.Events
-import Coverage as C exposing (CodeBlock, Msg(..))
+import Coverage as C exposing (CodeBlock, FunctionName, Msg(..))
 import Element as E exposing (layout)
 import Element.Background as Background
 import Element.Font as Font
+import Filters
 import Helpers
 import Html exposing (Html)
 import Html.Attributes as HA
@@ -39,7 +40,13 @@ main =
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( emptyModel, Cmd.batch [ Task.perform (\vp -> Resize (round vp.viewport.width) (round vp.viewport.height)) Browser.Dom.getViewport, Http.get { url = API.getListOfFiles, expect = Http.expectJson GotFiles (D.array D.string) } ] )
+    ( emptyModel
+    , Cmd.batch
+        [ Task.perform (\vp -> Resize (round vp.viewport.width) (round vp.viewport.height)) Browser.Dom.getViewport
+        , Http.get { url = API.getListOfFiles, expect = Http.expectJson GotFiles (D.array D.string) }
+        , API.getListOfInputsCmd GotInputs
+        ]
+    )
 
 
 
@@ -87,13 +94,15 @@ type Msg
     | NoMsg
     | FetchFiles
     | GotFiles (Result Http.Error (Array String))
-    | GotFunctions (Result Http.Error (Array String))
+    | GotFunctions (Result Http.Error (Array FunctionName))
     | FileSelect ListSelect.Msg
     | FunctionSelect ListSelect.Msg
     | FetchCodeBlock
     | GotCodeBlock (Result Http.Error C.CodeBlock)
     | HoverCounterId (Maybe Int)
-    | GotBestInputForCounterId (Result Http.Error String)
+    | GotBestInputForCounterId (Result Http.Error ( String, String ))
+    | FetchInputs
+    | GotInputs (Result Http.Error (Array ( Int, String )))
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -113,7 +122,7 @@ update msg model =
                     }
             in
             ( newModel
-            , API.getListOfBlocksCmd GotFunctions newModel
+            , API.getListOfFunctionsCmd GotFunctions newModel
             )
 
         NextFile ->
@@ -124,29 +133,29 @@ update msg model =
                     }
             in
             ( newModel
-            , API.getListOfBlocksCmd GotFunctions newModel
+            , API.getListOfFunctionsCmd GotFunctions newModel
             )
 
         PreviousFunction ->
             let
                 newModel =
                     { model
-                        | selected_block = Helpers.prevInt model.selected_block
+                        | selected_function = Helpers.prevInt model.selected_function
                     }
             in
             ( newModel
-            , API.getCodeBlockCmd GotCodeBlock newModel
+            , API.getCoverageCmd GotCodeBlock newModel
             )
 
         NextFunction ->
             let
                 newModel =
                     { model
-                        | selected_block = Helpers.nextInt (Array.length model.all_blocks) model.selected_block
+                        | selected_function = Helpers.nextInt (Array.length model.all_functions) model.selected_function
                     }
             in
             ( newModel
-            , API.getCodeBlockCmd GotCodeBlock newModel
+            , API.getCoverageCmd GotCodeBlock newModel
             )
 
         GotCodeBlock (Ok block) ->
@@ -161,12 +170,12 @@ update msg model =
         GotFunctions (Ok functions) ->
             let
                 newModel =
-                    { model | all_blocks = functions, selected_block = Just 0 }
+                    { model | all_functions = functions, selected_function = Just 0 }
             in
-            ( newModel, API.getCodeBlockCmd GotCodeBlock newModel )
+            ( newModel, API.getCoverageCmd GotCodeBlock newModel )
 
         GotFunctions (Err _) ->
-            ( { model | all_blocks = Array.empty }, Cmd.none )
+            ( { model | all_functions = Array.empty }, Cmd.none )
 
         FileSelect m ->
             let
@@ -178,7 +187,7 @@ update msg model =
                     { model | all_files = files.all_items, selected_file = files.selected_item }
             in
             ( newModel
-            , API.getListOfBlocksCmd GotFunctions newModel
+            , API.getListOfFunctionsCmd GotFunctions newModel
             )
 
         FunctionSelect m ->
@@ -188,10 +197,10 @@ update msg model =
             in
             let
                 newModel =
-                    { model | selected_block = functions.selected_item }
+                    { model | selected_function = functions.selected_item }
             in
             ( newModel
-            , API.getCodeBlockCmd GotCodeBlock newModel
+            , API.getCoverageCmd GotCodeBlock newModel
             )
 
         GotFiles (Ok files) ->
@@ -199,14 +208,14 @@ update msg model =
                 newModel =
                     { model | all_files = files, selected_file = Just 0 }
             in
-            ( newModel, API.getListOfBlocksCmd GotFunctions newModel )
+            ( newModel, API.getListOfFunctionsCmd GotFunctions newModel )
 
         GotFiles (Err _) ->
             ( model, Cmd.none )
 
         FetchCodeBlock ->
             ( model
-            , API.getCodeBlockCmd GotCodeBlock model
+            , API.getCoverageCmd GotCodeBlock model
             )
 
         HoverCounterId optid ->
@@ -215,18 +224,29 @@ update msg model =
                     ( { model | counter_id = optid, best_input = Nothing }
                     , Http.get
                         { url = API.getBestInputForCounter id
-                        , expect = Http.expectJson GotBestInputForCounterId D.string
+                        , expect = Http.expectJson GotBestInputForCounterId (D.map2 (\a -> \b -> ( a, b )) (D.index 0 D.string) (D.index 1 D.string))
                         }
                     )
 
                 Nothing ->
                     ( { model | counter_id = optid }, Cmd.none )
 
-        GotBestInputForCounterId (Ok text) ->
-            ( { model | best_input = Just text }, Cmd.none )
+        GotBestInputForCounterId (Ok ( name, text )) ->
+            ( { model | best_input = Just ( name, text ) }, Cmd.none )
 
         GotBestInputForCounterId (Err _) ->
-            ( { model | best_input = Just "error" }, Cmd.none )
+            ( { model | best_input = Just ( "error", "error" ) }, Cmd.none )
+
+        FetchInputs ->
+            ( model, API.getListOfInputsCmd GotInputs )
+
+        GotInputs res ->
+            case res of
+                Ok inputs ->
+                    ( { model | all_inputs = inputs, selected_input = Just 0 }, Cmd.none )
+
+                Err _ ->
+                    ( { model | all_inputs = Array.empty, selected_input = Nothing }, Cmd.none )
 
 
 
@@ -255,7 +275,7 @@ mainView model =
                 ]
             , E.column [ E.spacing normalSpacing, E.alignTop, E.width (E.px model.layout.column_width) ]
                 [ E.row [ E.padding normalSpacing, E.width E.fill, Background.color fg, Font.family codeFontFamily, Font.color bgCode, Font.size largeFontSize ]
-                    [ E.el [ E.alignLeft ] (E.text "Functions"), E.el [ Font.size smallFontSize, E.alignRight ] (E.text "'a': previous    's': next") ]
+                    [ E.el [ E.alignLeft ] (E.text "Functions"), E.el [ Font.size smallFontSize, E.alignRight ] (E.text "'k': previous    'l': next") ]
                 , E.el [ E.height (E.shrink |> E.maximum 140), E.width (E.px model.layout.column_width) ]
                     (E.map FunctionSelect
                         (ListSelect.view
@@ -266,22 +286,41 @@ mainView model =
                     )
                 ]
             ]
-        , E.row [ E.alignTop, E.width E.fill, E.alignTop, E.spacing largeSpacing ]
-            [ E.el [ E.alignTop, E.width E.fill ]
+        , E.row [ E.alignTop, E.width E.fill, E.spacing model.layout.column_sep ]
+            [ E.column [ E.spacing normalSpacing, E.alignTop, E.width E.fill ]
+                [ E.row [ E.padding normalSpacing, E.width E.fill, Background.color fg, Font.family codeFontFamily, Font.color bgCode, Font.size largeFontSize ]
+                    [ E.el [ E.alignLeft ] (E.text "Filters") ]
+                , E.none
+
+                -- , E.map
+                --     (\m ->
+                --         case m of
+                --             Filters.ShowAllCoverage ->
+                --                 NoMsg
+                --             Filters.ShowInputCoverage _ ->
+                --                 NoMsg
+                --     )
+                --     (Filters.view
+                --         model
+                --     )
+                ]
+            ]
+        , E.row [ E.alignTop, E.width E.fill, E.spacing model.layout.column_sep ]
+            [ E.el [ E.alignTop, E.width (E.px model.layout.column_width) ]
                 (Maybe.withDefault
                     E.none
                     (Maybe.map (\block -> codeBlockWrapper { block = block, layout = model.layout, focused_id = model.counter_id }) model.block)
                 )
-            , E.paragraph [ E.alignTop, E.htmlAttribute (HA.style "position" "sticky"), E.htmlAttribute (HA.style "position" "-webkit-sticky"), E.htmlAttribute (HA.style "right" "0"), E.htmlAttribute (HA.style "top" "10px"), E.alignRight, E.alignTop, E.width E.fill, E.padding largeSpacing, Background.color fg, Font.color bgCode, Font.family codeFontFamily, Font.size largeFontSize, E.spacing normalSpacing ]
-                [ E.text
-                    (case model.best_input of
-                        Just text ->
-                            text
+            , case model.best_input of
+                Just ( name, text ) ->
+                    E.column [ E.alignTop, E.alignTop, E.htmlAttribute (HA.style "position" "sticky"), E.htmlAttribute (HA.style "position" "-webkit-sticky"), E.htmlAttribute (HA.style "right" (String.fromInt model.layout.padding ++ "px")), E.htmlAttribute (HA.style "top" "10px"), E.width (E.px model.layout.column_width) ]
+                        [ E.paragraph [ E.padding largeSpacing, Background.color fg, Font.color bgCode, Font.family codeFontFamily, Font.size largeFontSize, E.spacing normalSpacing, E.htmlAttribute (HA.style "white-space" "pre") ]
+                            [ E.html (Html.text (name ++ ":\n\n" ++ text))
+                            ]
+                        ]
 
-                        Nothing ->
-                            ""
-                    )
-                ]
+                Nothing ->
+                    E.none
             ]
         , E.el [ E.height E.fill, E.width E.fill ] E.none
         ]

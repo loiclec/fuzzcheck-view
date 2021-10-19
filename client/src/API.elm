@@ -4,84 +4,62 @@ import Array exposing (Array)
 import Coverage exposing (..)
 import Http
 import Json.Decode as D
-import MainModel exposing (Model)
+import MainModel exposing (CoverageChoice, Model)
 import Url.Builder as UrlB
 
 
-getCodeBlockUrl : Model -> Maybe String
-getCodeBlockUrl model =
-    model.selected_file
+getCoverageUrl : { a | all_functions : Array FunctionName, selected_function : Maybe Int, coverage_choice : CoverageChoice } -> Maybe String
+getCoverageUrl model =
+    model.selected_function
         |> Maybe.andThen
-            (\selected_file ->
-                Array.get selected_file model.all_files
+            (\selected_function ->
+                Array.get selected_function model.all_functions
             )
-        |> Maybe.andThen
-            (\filename ->
-                model.selected_block
-                    |> Maybe.andThen
-                        (\selected_block ->
-                            Array.get selected_block model.all_blocks
-                        )
-                    |> Maybe.map (\block -> ( filename, block ))
-            )
-        |> Maybe.map (\( filename, function_name ) -> UrlB.relative [ "code_block" ] [ UrlB.string "file" filename, UrlB.string "function" function_name ])
+        |> Maybe.map (\function_name -> UrlB.relative [ "coverage" ] [ UrlB.string "filter" (getCoverageFilterString model.coverage_choice), UrlB.string "function" function_name.name ])
 
 
-getCodeBlockCmd : (Result Http.Error CodeBlock -> msg) -> Model -> Cmd msg
-getCodeBlockCmd getmsg model =
+getCoverageCmd : (Result Http.Error CodeBlock -> msg) -> { a | all_functions : Array FunctionName, selected_function : Maybe Int, coverage_choice : CoverageChoice } -> Cmd msg
+getCoverageCmd getmsg model =
     let
         optreq =
-            getCodeBlockUrl model
+            getCoverageUrl model
     in
     case optreq of
         Just req ->
             Http.get
                 { url = req
-                , expect = Http.expectJson getmsg decodeCodeBlock
+                , expect = Http.expectJson getmsg decodeFunctionCoverage
                 }
 
         Nothing ->
             Cmd.none
 
 
-getListOfBlocksUrl : Model -> Maybe String
-getListOfBlocksUrl model =
+getListOfFunctionsUrl : Model -> Maybe String
+getListOfFunctionsUrl model =
     model.selected_file
         |> Maybe.andThen
             (\selected_file ->
                 Array.get selected_file model.all_files
             )
-        |> Maybe.map (\filename -> UrlB.relative [ "code_blocks" ] [ UrlB.string "file" filename ])
+        |> Maybe.map (\filename -> UrlB.relative [ "functions" ] [ UrlB.string "file" filename ])
 
 
-getListOfBlocksCmd : (Result Http.Error (Array String) -> msg) -> Model -> Cmd msg
-getListOfBlocksCmd getmsg model =
+getListOfFunctionsCmd : (Result Http.Error (Array FunctionName) -> msg) -> Model -> Cmd msg
+getListOfFunctionsCmd getmsg model =
     let
         optreq =
-            getListOfBlocksUrl model
+            getListOfFunctionsUrl model
     in
     case optreq of
         Just req ->
             Http.get
                 { url = req
-                , expect = Http.expectJson getmsg (D.array D.string)
+                , expect = Http.expectJson getmsg (D.array decodeFunctionName)
                 }
 
         Nothing ->
             Cmd.none
-
-
-
--- Maybe.andThen
---     (\i ->
---         Maybe.map
---             (\filename ->
---                 UrlB.relative [ "code_blocks" ]
---                     [ UrlB.string "file" filename, UrlB.string "function" (model.blocks) ]
---             )
---             Maybe.andThen (\filename -> Array.get model.blocks) (Array.get i model.all_files)
---     )
---     model.selected_file
 
 
 getListOfFiles : String
@@ -92,3 +70,35 @@ getListOfFiles =
 getBestInputForCounter : Int -> String
 getBestInputForCounter id =
     UrlB.relative [ "best_input" ] [ UrlB.int "counter" id ]
+
+
+getListOfInputs : String
+getListOfInputs =
+    "inputs"
+
+
+getListOfInputsCmd : (Result Http.Error (Array ( Int, String )) -> msg) -> Cmd msg
+getListOfInputsCmd getmsg =
+    Http.get
+        { url = getListOfInputs
+        , expect =
+            Http.expectJson
+                getmsg
+                (D.array
+                    (D.map2
+                        (\a -> \b -> ( a, b ))
+                        (D.index 0 D.int)
+                        (D.index 1 D.string)
+                    )
+                )
+        }
+
+
+getCoverageFilterString : CoverageChoice -> String
+getCoverageFilterString choice =
+    case choice of
+        MainModel.All ->
+            "all"
+
+        MainModel.Input x ->
+            String.fromInt x
