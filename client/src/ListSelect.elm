@@ -3,6 +3,7 @@ module ListSelect exposing (..)
 import Array exposing (Array)
 import Element as E
 import Element.Background as Background
+import Element.Events as EE
 import Element.Font as Font exposing (monospace)
 import Element.Input as EI
 import Style exposing (..)
@@ -26,6 +27,8 @@ empty =
 type Msg
     = Select Int
     | UnSelect
+    | Hover Int
+    | UnHover
 
 
 update : Msg -> Model -> Model
@@ -43,6 +46,12 @@ update msg model =
                     Nothing
             }
 
+        Hover _ ->
+            model
+
+        UnHover ->
+            model
+
 
 view : Model -> E.Element Msg
 view model =
@@ -52,7 +61,7 @@ view model =
                 (\i ->
                     \x ->
                         EI.checkbox
-                            ([ E.width E.fill, E.padding smallSpacing ]
+                            ([ E.width E.fill, E.padding smallSpacing, EE.onMouseEnter (Hover i), EE.onMouseLeave UnHover ]
                                 ++ (if
                                         model.selected_item
                                             == Just i

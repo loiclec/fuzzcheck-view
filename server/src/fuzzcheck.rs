@@ -5,8 +5,6 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::FunctionCoverage;
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CoverageMap {
     pub functions: Vec<Function>,

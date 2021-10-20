@@ -10,8 +10,15 @@ use crate::fuzzcheck::Region;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum CodeSpanKind {
     Untracked,
-    NotHit { id: usize },
-    Hit { id: usize },
+    Tracked { id: usize, status: CoverageStatus },
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum CoverageStatus {
+    Hit,
+    NotHit,
+    Best,
+    Unique,
+    Unknown,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -41,16 +48,44 @@ pub struct FunctionName {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum CoverageFilter {
+pub enum InputFilter {
     All,
     Input(usize),
 }
+#[derive(Clone, Debug, Serialize, Deserialize, FromFormField)]
+pub enum FunctionFilter {
+    Exclude0PercentCoverage,
+    Exclude100PercentCoverage,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, FromFormField)]
+pub enum CoverageKindFilter {
+    All,
+    LeastComplex,
+    Unique,
+}
 
-impl CoverageFilter {
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct InputInfo {
+    pub pool_idx: usize,
+    pub hash: String,
+}
+impl<'v> FromFormField<'v> for InputFilter {
+    fn from_value(field: rocket::form::ValueField<'v>) -> rocket::form::Result<'v, Self> {
+        match field.name.to_string().as_str() {
+            "all" => Ok(InputFilter::All),
+            "input" => {
+                let idx = field.value.parse::<usize>().unwrap();
+                Ok(InputFilter::Input(idx))
+            }
+            x => panic!("{}", x),
+        }
+    }
+}
+impl InputFilter {
     pub fn from_string(s: &str) -> Option<Self> {
         match s {
-            "all" => Some(CoverageFilter::All),
-            s => s.parse().ok().map(CoverageFilter::Input),
+            "all" => Some(InputFilter::All),
+            s => s.parse().ok().map(InputFilter::Input),
         }
     }
 }
@@ -122,12 +157,18 @@ impl fuzzcheck::Function {
                         });
                         code_lines[r.lines.0 - fst_lineno].spans.push(CodeSpan {
                             text: " ⦿ ".to_owned(),
-                            kind: CodeSpanKind::NotHit { id: counter.id },
+                            kind: CodeSpanKind::Tracked {
+                                id: counter.id,
+                                status: CoverageStatus::Unknown,
+                            },
                         });
                     } else {
                         code_lines[r.lines.0 - fst_lineno].spans.push(CodeSpan {
                             text,
-                            kind: CodeSpanKind::NotHit { id: counter.id },
+                            kind: CodeSpanKind::Tracked {
+                                id: counter.id,
+                                status: CoverageStatus::Unknown,
+                            },
                         });
                     }
                 }

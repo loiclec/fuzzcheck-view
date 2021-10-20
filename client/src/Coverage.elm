@@ -16,7 +16,7 @@ type alias FunctionName =
     }
 
 
-type alias CodeBlock =
+type alias FunctionCoverage =
     { title : String
     , file : String
     , lines : List CodeLine
@@ -48,12 +48,12 @@ type Msg
 
 
 type alias CodeBlockData a =
-    { a | block : CodeBlock, layout : Layout, focused_id : Maybe Int }
+    { a | block : FunctionCoverage, layout : Layout, focused_id : Maybe Int }
 
 
-emptyCodeBlock : CodeBlock
+emptyCodeBlock : FunctionCoverage
 emptyCodeBlock =
-    CodeBlock "empty" "" [] []
+    FunctionCoverage "empty" "" [] []
 
 
 viewCodeBlock : CodeBlockData a -> E.Element Msg
@@ -256,9 +256,9 @@ decodeCodeLine =
 
 {-| Decodes a FunctionCoverage
 -}
-decodeFunctionCoverage : D.Decoder CodeBlock
+decodeFunctionCoverage : D.Decoder FunctionCoverage
 decodeFunctionCoverage =
-    D.map4 CodeBlock
+    D.map4 FunctionCoverage
         (D.map .demangled_name (D.field "name" decodeFunctionName))
         (D.field "file" D.string)
         (D.field "lines" (D.list decodeCodeLine))

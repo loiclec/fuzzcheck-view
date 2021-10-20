@@ -7,7 +7,7 @@ import Array exposing (Array)
 import Browser
 import Browser.Dom
 import Browser.Events
-import Coverage as C exposing (CodeBlock, FunctionName, Msg(..))
+import Coverage as C exposing (FunctionCoverage, FunctionName, Msg(..))
 import Element as E exposing (layout)
 import Element.Background as Background
 import Element.Font as Font
@@ -98,11 +98,13 @@ type Msg
     | FileSelect ListSelect.Msg
     | FunctionSelect ListSelect.Msg
     | FetchCodeBlock
-    | GotCodeBlock (Result Http.Error C.CodeBlock)
+    | GotCodeBlock (Result Http.Error C.FunctionCoverage)
     | HoverCounterId (Maybe Int)
-    | GotBestInputForCounterId (Result Http.Error ( String, String ))
+    | GotBestInputForCounterId (Result Http.Error String)
     | FetchInputs
-    | GotInputs (Result Http.Error (Array ( Int, String )))
+    | GotInputs (Result Http.Error (Array InputInfo))
+    | FetchInput String
+    | GotPreviewInput String (Result Http.Error String)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -224,18 +226,27 @@ update msg model =
                     ( { model | counter_id = optid, best_input = Nothing }
                     , Http.get
                         { url = API.getBestInputForCounter id
-                        , expect = Http.expectJson GotBestInputForCounterId (D.map2 (\a -> \b -> ( a, b )) (D.index 0 D.string) (D.index 1 D.string))
+                        , expect = Http.expectJson GotBestInputForCounterId D.string
                         }
                     )
 
                 Nothing ->
                     ( { model | counter_id = optid }, Cmd.none )
 
-        GotBestInputForCounterId (Ok ( name, text )) ->
-            ( { model | best_input = Just ( name, text ) }, Cmd.none )
+        GotBestInputForCounterId (Ok name) ->
+            ( { model | best_input = Just name }, API.getInputCmd (GotPreviewInput name) name )
 
         GotBestInputForCounterId (Err _) ->
-            ( { model | best_input = Just ( "error", "error" ) }, Cmd.none )
+            ( { model | best_input = Nothing }, Cmd.none )
+
+        FetchInput name ->
+            ( model, API.getInputCmd (GotPreviewInput name) name )
+
+        GotPreviewInput name (Ok content) ->
+            ( { model | previewed_input = Just ( name, content ) }, Cmd.none )
+
+        GotPreviewInput _ (Err _) ->
+            ( model, Cmd.none )
 
         FetchInputs ->
             ( model, API.getListOfInputsCmd GotInputs )
@@ -287,22 +298,52 @@ mainView model =
                 ]
             ]
         , E.row [ E.alignTop, E.width E.fill, E.spacing model.layout.column_sep ]
-            [ E.column [ E.spacing normalSpacing, E.alignTop, E.width E.fill ]
+            [ E.column [ E.spacing normalSpacing, E.alignTop, E.width (E.px model.layout.column_width) ]
                 [ E.row [ E.padding normalSpacing, E.width E.fill, Background.color fg, Font.family codeFontFamily, Font.color bgCode, Font.size largeFontSize ]
                     [ E.el [ E.alignLeft ] (E.text "Filters") ]
-                , E.none
+                , E.el [ E.height (E.shrink |> E.maximum 140), E.width (E.px model.layout.column_width) ]
+                    (E.map
+                        (\m ->
+                            case m of
+                                Filters.ShowAllCoverage ->
+                                    NoMsg
 
-                -- , E.map
-                --     (\m ->
-                --         case m of
-                --             Filters.ShowAllCoverage ->
-                --                 NoMsg
-                --             Filters.ShowInputCoverage _ ->
-                --                 NoMsg
-                --     )
-                --     (Filters.view
-                --         model
-                --     )
+                                Filters.ShowInputCoverage _ ->
+                                    NoMsg
+                        )
+                        (Filters.view
+                            model
+                        )
+                    )
+                ]
+            , E.column [ E.spacing normalSpacing, E.alignTop, E.width (E.px model.layout.column_width) ]
+                [ E.row [ E.padding normalSpacing, E.width E.fill, Background.color fg, Font.family codeFontFamily, Font.color bgCode, Font.size largeFontSize ]
+                    [ E.el [ E.alignLeft ] (E.text "Inputs") ]
+                , E.el [ E.height (E.shrink |> E.maximum 140), E.width (E.px model.layout.column_width) ]
+                    (E.map
+                        (\x ->
+                            case x of
+                                ListSelect.Select i ->
+                                    NoMsg
+
+                                ListSelect.UnSelect ->
+                                    NoMsg
+
+                                ListSelect.Hover i ->
+                                    case Array.get i model.all_inputs of
+                                        Just name ->
+                                            FetchInput name.hash
+
+                                        Nothing ->
+                                            NoMsg
+
+                                ListSelect.UnHover ->
+                                    NoMsg
+                        )
+                        (ListSelect.view
+                            { all_items = Array.map .hash model.all_inputs, selected_item = model.selected_input }
+                        )
+                    )
                 ]
             ]
         , E.row [ E.alignTop, E.width E.fill, E.spacing model.layout.column_sep ]
@@ -311,7 +352,7 @@ mainView model =
                     E.none
                     (Maybe.map (\block -> codeBlockWrapper { block = block, layout = model.layout, focused_id = model.counter_id }) model.block)
                 )
-            , case model.best_input of
+            , case model.previewed_input of
                 Just ( name, text ) ->
                     E.column [ E.alignTop, E.alignTop, E.htmlAttribute (HA.style "position" "sticky"), E.htmlAttribute (HA.style "position" "-webkit-sticky"), E.htmlAttribute (HA.style "right" (String.fromInt model.layout.padding ++ "px")), E.htmlAttribute (HA.style "top" "10px"), E.width (E.px model.layout.column_width) ]
                         [ E.paragraph [ E.padding largeSpacing, Background.color fg, Font.color bgCode, Font.family codeFontFamily, Font.size largeFontSize, E.spacing normalSpacing, E.htmlAttribute (HA.style "white-space" "pre") ]
@@ -326,7 +367,7 @@ mainView model =
         ]
 
 
-codeBlockWrapper : { a | block : CodeBlock, layout : Layout, focused_id : Maybe Int } -> E.Element Msg
+codeBlockWrapper : { a | block : FunctionCoverage, layout : Layout, focused_id : Maybe Int } -> E.Element Msg
 codeBlockWrapper { block, layout, focused_id } =
     E.map
         (\msg ->

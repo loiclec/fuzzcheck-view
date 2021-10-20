@@ -4,7 +4,7 @@ import Array exposing (Array)
 import Element as E
 import Element.Input as EI
 import ListSelect exposing (Msg(..))
-import MainModel exposing (CoverageChoice(..))
+import MainModel exposing (InputFilter(..))
 
 
 type Msg
@@ -12,13 +12,13 @@ type Msg
     | ShowInputCoverage (Maybe Int)
 
 
-view : { a | coverage_choice : CoverageChoice, all_inputs : Array ( Int, String ), selected_input : Maybe Int } -> E.Element Msg
+view : { a | input_filter : InputFilter, selected_input : Maybe Int } -> E.Element Msg
 view model =
-    E.column [ E.width E.fill ]
+    E.column [ E.scrollbars, E.width E.fill, E.height (E.shrink |> E.maximum 140) ]
         [ EI.radio []
             { onChange = identity
             , selected =
-                case model.coverage_choice of
+                case model.input_filter of
                     All ->
                         Just ShowAllCoverage
 
@@ -30,16 +30,4 @@ view model =
                 , EI.option (ShowInputCoverage model.selected_input) (E.text "Specific input")
                 ]
             }
-        , E.map
-            (\x ->
-                case x of
-                    Select i ->
-                        ShowInputCoverage (Just i)
-
-                    UnSelect ->
-                        ShowInputCoverage Nothing
-            )
-            (ListSelect.view
-                { all_items = Array.map (\( _, y ) -> y) model.all_inputs, selected_item = model.selected_input }
-            )
         ]
