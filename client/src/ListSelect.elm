@@ -12,7 +12,7 @@ import Style exposing (..)
 type alias Model =
     { all_items : Array String
     , selected_item :
-        Maybe Int
+        Int
     }
 
 
@@ -20,7 +20,7 @@ empty : Model
 empty =
     { all_items = Array.empty
     , selected_item =
-        Nothing
+        0
     }
 
 
@@ -37,13 +37,13 @@ update msg model =
         Select i ->
             { model
                 | selected_item =
-                    Just i
+                    i
             }
 
         UnSelect ->
             { model
                 | selected_item =
-                    Nothing
+                    0
             }
 
         Hover _ ->
@@ -64,7 +64,7 @@ view model =
                             ([ E.width E.fill, E.padding smallSpacing, EE.onMouseEnter (Hover i), EE.onMouseLeave UnHover ]
                                 ++ (if
                                         model.selected_item
-                                            == Just i
+                                            == i
                                     then
                                         [ Background.color (makeTransparent green 0.3), E.mouseOver [ Background.color (makeTransparent green 0.5) ] ]
 
@@ -88,7 +88,7 @@ view model =
                                         E.el [ Font.size normalFontSize ] (E.text "-")
                             , checked =
                                 model.selected_item
-                                    == Just i
+                                    == i
                             , label =
                                 EI.labelRight [ E.width E.fill ]
                                     (E.paragraph [ E.spacing smallSpacing ] [ E.text x ])

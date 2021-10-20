@@ -1,27 +1,19 @@
 module Helpers exposing (..)
 
 
-prevInt : Maybe Int -> Maybe Int
-prevInt x =
-    Maybe.map
-        (\y ->
-            if y > 0 then
-                y - 1
+prevInt : Int -> Int
+prevInt y =
+    if y > 0 then
+        y - 1
 
-            else
-                0
-        )
-        x
+    else
+        0
 
 
-nextInt : Int -> Maybe Int -> Maybe Int
-nextInt max x =
-    Maybe.map
-        (\y ->
-            if y < max - 1 then
-                y + 1
+nextInt : Int -> Int -> Int
+nextInt max y =
+    if y < max - 1 then
+        y + 1
 
-            else
-                y
-        )
-        x
+    else
+        y

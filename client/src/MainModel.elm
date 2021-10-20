@@ -2,9 +2,11 @@ module MainModel exposing (..)
 
 import Array exposing (Array)
 import Coverage exposing (FunctionCoverage, FunctionName)
+import Dict exposing (Dict)
 import Json.Decode as D
 import Layout
 import ListSelect
+import Set exposing (Set)
 
 
 
@@ -13,23 +15,52 @@ import ListSelect
 
 type alias Model =
     { layout : Layout.Layout
-    , all_functions : Array FunctionName
-    , selected_function : Maybe Int
+    , all_files : Array ( String, Array FunctionName )
+    , selected_file : Int
+    , selected_function : Int
     , block : Maybe FunctionCoverage
-    , all_files : Array String
-    , selected_file : Maybe Int
     , counter_id : Maybe Int
     , best_input : Maybe String
     , input_filter : InputFilter
+    , function_filter : Set FunctionFilter
+    , coverage_kind_filter : CoverageKindFilter
     , all_inputs : Array InputInfo
-    , selected_input : Maybe Int
+    , selected_input : Int
     , previewed_input : Maybe ( String, String )
     }
 
 
+emptyModel : Model
+emptyModel =
+    { layout = Layout.initialLayout
+    , all_files = Array.empty
+    , selected_file = 0
+    , selected_function = 0
+    , block = Nothing
+    , counter_id = Nothing
+    , best_input = Nothing
+    , input_filter = AllInputs
+    , function_filter = Set.empty
+    , coverage_kind_filter = AllCoverageKind
+    , all_inputs = Array.empty
+    , selected_input = 0
+    , previewed_input = Nothing
+    }
+
+
 type InputFilter
-    = All
-    | Input Int
+    = AllInputs
+    | OnlyInput Int
+
+
+type FunctionFilter
+    = Exclude0PercentCoverageFunctions
+    | Exclude100PercentCoverageFunctions
+
+
+type CoverageKindFilter
+    = AllCoverageKind
+    | LeastComplexCoverageKind
 
 
 type alias InputInfo =
@@ -43,16 +74,18 @@ decodeInputInfo =
     D.map2 InputInfo (D.field "pool_idx" D.int) (D.field "hash" D.string)
 
 
-emptyModel : Model
-emptyModel =
-    Model Layout.initialLayout Array.empty Nothing Nothing Array.empty Nothing Nothing Nothing All Array.empty Nothing Nothing
-
-
-fileSelectModel : { a | all_files : Array String, selected_file : Maybe Int } -> ListSelect.Model
+fileSelectModel : { a | all_files : Array ( String, Array FunctionName ), selected_file : Int } -> ListSelect.Model
 fileSelectModel model =
-    ListSelect.Model model.all_files model.selected_file
+    ListSelect.Model (Array.map Tuple.first model.all_files) model.selected_file
 
 
-functionSelectModel : { a | all_functions : Array FunctionName, selected_function : Maybe Int } -> ListSelect.Model
+functionSelectModel : { a | all_files : Array ( String, Array FunctionName ), selected_file : Int, selected_function : Int } -> ListSelect.Model
 functionSelectModel model =
-    ListSelect.Model (Array.map .demangled_name model.all_functions) model.selected_function
+    ListSelect.Model
+        (Array.get model.selected_file model.all_files
+            |> Maybe.map Tuple.second
+            |> Maybe.map
+                (Array.map .demangled_name)
+            |> Maybe.withDefault Array.empty
+        )
+        model.selected_function

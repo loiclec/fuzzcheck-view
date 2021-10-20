@@ -38,8 +38,15 @@ type alias CodeSpan =
 
 type CodeSpanKind
     = Untracked
-    | NotHit Int
-    | Hit Int
+    | Tracked Int CoverageStatus
+
+
+type CoverageStatus
+    = Hit
+    | NotHit
+    | Best
+    | Unique
+    | Unknown
 
 
 type Msg
@@ -135,25 +142,22 @@ viewCodeSpan { block, layout, focused_id, span } =
     case span.kind of
         Untracked ->
             E.el
-                [ Font.color (codeSpanKindColor span.kind) ]
+                [ Font.color fg ]
                 (E.text span.text)
 
-        NotHit id ->
-            viewTrackedCodeSpan { block = block, layout = layout, focused_id = focused_id, span = span, id = id }
-
-        Hit id ->
-            viewTrackedCodeSpan { block = block, layout = layout, focused_id = focused_id, span = span, id = id }
+        Tracked id status ->
+            viewTrackedCodeSpan { block = block, layout = layout, focused_id = focused_id, id = id, status = status, text = span.text }
 
 
-viewTrackedCodeSpan : CodeBlockData { a | span : CodeSpan, id : Int } -> E.Element Msg
+viewTrackedCodeSpan : CodeBlockData { a | id : Int, status : CoverageStatus, text : String, focused_id : Maybe Int } -> E.Element Msg
 viewTrackedCodeSpan model =
     let
         ( fgColor, bgColor ) =
             let
                 color =
-                    codeSpanKindColor model.span.kind
+                    coverageStatusColor model.status
             in
-            if isCodeSpanKindFocused model.span.kind model.focused_id then
+            if isCounterFocused model.id model.focused_id then
                 ( bgCode, color )
 
             else
@@ -166,33 +170,38 @@ viewTrackedCodeSpan model =
         , EE.onMouseEnter (SelectCounter model.id)
         , EE.onMouseLeave UnselectCounter
         ]
-        (E.text model.span.text)
+        (E.text model.text)
 
 
-codeSpanKindColor : CodeSpanKind -> E.Color
-codeSpanKindColor kind =
-    case kind of
-        Untracked ->
-            fg
-
-        NotHit _ ->
+coverageStatusColor : CoverageStatus -> E.Color
+coverageStatusColor status =
+    case status of
+        NotHit ->
             red
 
-        Hit _ ->
+        Hit ->
             green
 
+        Best ->
+            blue
 
-isCodeSpanKindFocused : CodeSpanKind -> Maybe Int -> Bool
-isCodeSpanKindFocused kind focused_id =
-    case kind of
-        Untracked ->
-            False
+        Unique ->
+            purple
 
-        NotHit id ->
-            isCounterFocused id focused_id
+        Unknown ->
+            fg
 
-        Hit id ->
-            isCounterFocused id focused_id
+
+
+-- isCodeSpanKindFocused : CodeSpanKind -> Maybe Int -> Bool
+-- isCodeSpanKindFocused kind focused_id =
+--     case kind of
+--         Untracked ->
+--             False
+--         NotHit id ->
+--             isCounterFocused id focused_id
+--         Hit id ->
+--             isCounterFocused id focused_id
 
 
 isCounterFocused : Int -> Maybe Int -> Bool
@@ -220,9 +229,34 @@ decodeCodeSpanKind =
                         _ ->
                             D.fail <| "failed to decode CodeSpanKind"
                 )
-        , D.field "NotHit" (D.field "id" D.int) |> D.andThen (\id -> D.succeed (NotHit id))
-        , D.field "Hit" (D.field "id" D.int) |> D.andThen (\id -> D.succeed (Hit id))
+        , D.field "Tracked" (D.map2 Tracked (D.field "id" D.int) (D.field "status" decodeCoverageStatus))
         ]
+
+
+decodeCoverageStatus : D.Decoder CoverageStatus
+decodeCoverageStatus =
+    D.string
+        |> D.andThen
+            (\value ->
+                case value of
+                    "NotHit" ->
+                        D.succeed NotHit
+
+                    "Hit" ->
+                        D.succeed Hit
+
+                    "Best" ->
+                        D.succeed Best
+
+                    "Unique" ->
+                        D.succeed Unique
+
+                    "Unknown" ->
+                        D.succeed Unknown
+
+                    _ ->
+                        D.fail <| "failed to decode CodeSpanKind"
+            )
 
 
 {-| Decodes a CodeSpan

@@ -40,10 +40,14 @@ main =
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( emptyModel
+    let
+        model =
+            emptyModel
+    in
+    ( model
     , Cmd.batch
         [ Task.perform (\vp -> Resize (round vp.viewport.width) (round vp.viewport.height)) Browser.Dom.getViewport
-        , Http.get { url = API.getListOfFiles, expect = Http.expectJson GotFiles (D.array D.string) }
+        , API.getFilesAndFunctionsCmd GotFunctions model
         , API.getListOfInputsCmd GotInputs
         ]
     )
@@ -92,9 +96,8 @@ type Msg
     | PreviousFunction
     | NextFunction
     | NoMsg
-    | FetchFiles
-    | GotFiles (Result Http.Error (Array String))
-    | GotFunctions (Result Http.Error (Array FunctionName))
+    | FetchFunctions
+    | GotFunctions (Result Http.Error (Array ( String, Array FunctionName )))
     | FileSelect ListSelect.Msg
     | FunctionSelect ListSelect.Msg
     | FetchCodeBlock
@@ -124,7 +127,7 @@ update msg model =
                     }
             in
             ( newModel
-            , API.getListOfFunctionsCmd GotFunctions newModel
+            , Cmd.none
             )
 
         NextFile ->
@@ -135,7 +138,7 @@ update msg model =
                     }
             in
             ( newModel
-            , API.getListOfFunctionsCmd GotFunctions newModel
+            , Cmd.none
             )
 
         PreviousFunction ->
@@ -153,7 +156,7 @@ update msg model =
             let
                 newModel =
                     { model
-                        | selected_function = Helpers.nextInt (Array.length model.all_functions) model.selected_function
+                        | selected_function = Helpers.nextInt (Array.length model.all_files) model.selected_function
                     }
             in
             ( newModel
@@ -166,18 +169,18 @@ update msg model =
         GotCodeBlock (Err _) ->
             ( { model | block = Nothing }, Cmd.none )
 
-        FetchFiles ->
-            ( model, Http.get { url = API.getListOfFiles, expect = Http.expectJson GotFiles (D.array D.string) } )
+        FetchFunctions ->
+            ( model, Cmd.none )
 
         GotFunctions (Ok functions) ->
             let
                 newModel =
-                    { model | all_functions = functions, selected_function = Just 0 }
+                    { model | all_files = functions, selected_file = 0, selected_function = 0 }
             in
             ( newModel, API.getCoverageCmd GotCodeBlock newModel )
 
         GotFunctions (Err _) ->
-            ( { model | all_functions = Array.empty }, Cmd.none )
+            ( { model | all_files = Array.empty }, Cmd.none )
 
         FileSelect m ->
             let
@@ -186,10 +189,10 @@ update msg model =
             in
             let
                 newModel =
-                    { model | all_files = files.all_items, selected_file = files.selected_item }
+                    { model | selected_file = files.selected_item }
             in
             ( newModel
-            , API.getListOfFunctionsCmd GotFunctions newModel
+            , Cmd.none
             )
 
         FunctionSelect m ->
@@ -204,16 +207,6 @@ update msg model =
             ( newModel
             , API.getCoverageCmd GotCodeBlock newModel
             )
-
-        GotFiles (Ok files) ->
-            let
-                newModel =
-                    { model | all_files = files, selected_file = Just 0 }
-            in
-            ( newModel, API.getListOfFunctionsCmd GotFunctions newModel )
-
-        GotFiles (Err _) ->
-            ( model, Cmd.none )
 
         FetchCodeBlock ->
             ( model
@@ -254,10 +247,10 @@ update msg model =
         GotInputs res ->
             case res of
                 Ok inputs ->
-                    ( { model | all_inputs = inputs, selected_input = Just 0 }, Cmd.none )
+                    ( { model | all_inputs = inputs, selected_input = 0 }, Cmd.none )
 
                 Err _ ->
-                    ( { model | all_inputs = Array.empty, selected_input = Nothing }, Cmd.none )
+                    ( { model | all_inputs = Array.empty, selected_input = 0 }, Cmd.none )
 
 
 

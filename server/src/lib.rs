@@ -71,13 +71,12 @@ pub struct InputInfo {
 }
 impl<'v> FromFormField<'v> for InputFilter {
     fn from_value(field: rocket::form::ValueField<'v>) -> rocket::form::Result<'v, Self> {
-        match field.name.to_string().as_str() {
+        match field.value {
             "all" => Ok(InputFilter::All),
-            "input" => {
-                let idx = field.value.parse::<usize>().unwrap();
+            s => {
+                let idx = s.parse::<usize>().unwrap();
                 Ok(InputFilter::Input(idx))
             }
-            x => panic!("{}", x),
         }
     }
 }
