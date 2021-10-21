@@ -77,7 +77,7 @@ viewCodeBlock model =
 viewCounterIds : CodeBlockData a -> E.Element Msg
 viewCounterIds model =
     E.wrappedRow
-        [ E.width (E.fill |> E.maximum 800)
+        [ E.width E.fill
         , E.spacing normalSpacing
         , E.padding smallSpacing
         , Background.color altBgDark
@@ -106,7 +106,7 @@ viewCodeLines : CodeBlockData a -> E.Element Msg
 viewCodeLines { block, layout, focused_id } =
     E.row
         [ E.scrollbarX
-        , E.width (E.fill |> E.maximum 800)
+        , E.width E.fill
         , Font.color fg
         , Font.size normalFontSize
         , Font.family
@@ -255,7 +255,7 @@ decodeCoverageStatus =
                         D.succeed Unknown
 
                     _ ->
-                        D.fail <| "failed to decode CodeSpanKind"
+                        D.fail <| "failed to decode CoverageStatus"
             )
 
 

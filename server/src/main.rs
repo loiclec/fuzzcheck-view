@@ -24,77 +24,78 @@ fn functions(
     function_filter: Vec<FunctionFilter>,
     coverage_kind_filter: CoverageKindFilter,
 ) -> Json<Vec<(String, Vec<FunctionName>)>> {
-    match input_filter {
-        InputFilter::All => Json(state.functions_per_file.clone().into_iter().collect()),
+    let exclude_100 = function_filter
+        .iter()
+        .find(|filter| matches!(filter, FunctionFilter::Exclude100PercentCoverage))
+        .is_some();
+    let exclude_0 = function_filter
+        .iter()
+        .find(|filter| matches!(filter, FunctionFilter::Exclude0PercentCoverage))
+        .is_some();
+    if !(exclude_0 || exclude_100) {
+        return Json(state.functions_per_file.clone().into_iter().collect());
+    }
+    let input_counters = match input_filter {
+        InputFilter::All => HashSet::<usize>::from_iter(state.uniq_cov.all_hit_counters.iter().copied()),
         InputFilter::Input(input_idx) => {
-            let exclude_100 = function_filter
-                .iter()
-                .find(|filter| matches!(filter, FunctionFilter::Exclude100PercentCoverage))
-                .is_some();
-            let exclude_0 = function_filter
-                .iter()
-                .find(|filter| matches!(filter, FunctionFilter::Exclude0PercentCoverage))
-                .is_some();
-
-            if !(exclude_0 || exclude_100) {
-                Json(state.functions_per_file.clone().into_iter().collect())
-            } else {
-                let all_input_counters = HashSet::<usize>::from_iter(
-                    state
-                        .uniq_cov
-                        .counters_for_input
-                        .iter()
-                        .find(|(idx, _)| *idx == input_idx)
-                        .unwrap()
-                        .1
-                        .iter()
-                        .copied(),
-                );
-                let input_counters = match coverage_kind_filter {
-                    CoverageKindFilter::All => all_input_counters,
-                    CoverageKindFilter::LeastComplex => {
-                        let mut input_counters = all_input_counters;
-                        for (counter_idx, best_input_idx) in state.uniq_cov.best_for_counter.iter() {
-                            // 1. this is the right input
-                            if input_counters.contains(counter_idx) {
-                                // 2. but it is not the least complex
-                                if input_idx != *best_input_idx {
-                                    input_counters.remove(counter_idx);
-                                }
+            let all_input_counters = HashSet::<usize>::from_iter(
+                state
+                    .uniq_cov
+                    .counters_for_input
+                    .iter()
+                    .find(|(idx, _)| *idx == input_idx)
+                    .unwrap()
+                    .1
+                    .iter()
+                    .copied(),
+            );
+            match coverage_kind_filter {
+                CoverageKindFilter::All => all_input_counters,
+                CoverageKindFilter::LeastComplex => {
+                    let mut input_counters = all_input_counters;
+                    for (counter_idx, best_input_idx) in state.uniq_cov.best_for_counter.iter() {
+                        // 1. this is the right input
+                        if input_counters.contains(counter_idx) {
+                            // 2. but it is not the least complex
+                            if input_idx != *best_input_idx {
+                                input_counters.remove(counter_idx);
                             }
+                        } else {
+                            input_counters.remove(counter_idx);
                         }
-                        input_counters
                     }
-                    CoverageKindFilter::Unique => todo!(),
-                };
-                let mut functions_per_file = state.functions_per_file.clone();
-                let mut files_to_remove = vec![];
-                for (file, function_names) in functions_per_file.iter_mut() {
-                    function_names.drain_filter(|function_name| {
-                        let function = &state.function_coverage[&function_name.name];
-                        let mut any_counter_hit = false;
-                        let mut all_counters_hit = true;
-                        for counter_id in function.counter_ids.iter() {
-                            if input_counters.contains(counter_id) {
-                                any_counter_hit = true
-                            } else {
-                                all_counters_hit = false
-                            }
-                        }
-                        (exclude_0 && !any_counter_hit) || (exclude_100 && all_counters_hit)
-                    });
-                    if function_names.is_empty() {
-                        files_to_remove.push(file.clone());
-                    }
+                    input_counters
                 }
-                for file_to_remove in files_to_remove {
-                    functions_per_file.remove(&file_to_remove);
-                }
-
-                Json(functions_per_file.into_iter().collect())
+                CoverageKindFilter::Unique => todo!(),
             }
         }
+    };
+
+    let mut functions_per_file = state.functions_per_file.clone();
+    let mut files_to_remove = vec![];
+    for (file, function_names) in functions_per_file.iter_mut() {
+        function_names.drain_filter(|function_name| {
+            let function = &state.function_coverage[&function_name.name];
+            let mut any_counter_hit = false;
+            let mut all_counters_hit = true;
+            for counter_id in function.counter_ids.iter() {
+                if input_counters.contains(counter_id) {
+                    any_counter_hit = true
+                } else {
+                    all_counters_hit = false
+                }
+            }
+            (exclude_0 && !any_counter_hit) || (exclude_100 && all_counters_hit)
+        });
+        if function_names.is_empty() {
+            files_to_remove.push(file.clone());
+        }
     }
+    for file_to_remove in files_to_remove {
+        functions_per_file.remove(&file_to_remove);
+    }
+
+    Json(functions_per_file.into_iter().collect())
 }
 
 #[get("/coverage?<input_filter>&<function>")]
@@ -126,7 +127,8 @@ fn coverage(state: &State<ManagedData>, input_filter: InputFilter, function: Str
                         CodeSpanKind::Untracked => {}
                         CodeSpanKind::Tracked { id, status } => {
                             *status = if counters.contains(&id) {
-                                if *id == state.uniq_cov.best_for_counter.iter().find(|(x, _)| x == id).unwrap().1 {
+                                if input_idx == state.uniq_cov.best_for_counter.iter().find(|(x, _)| x == id).unwrap().1
+                                {
                                     CoverageStatus::Best
                                 } else {
                                     CoverageStatus::Hit

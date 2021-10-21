@@ -4,7 +4,7 @@ import Array exposing (Array)
 import Coverage exposing (..)
 import Http
 import Json.Decode as D
-import MainModel exposing (CoverageKindFilter, FunctionFilter, InputFilter, InputInfo, Model)
+import MainModel exposing (CoverageKindFilter, FunctionFilter, InputFilter, InputInfo, Model, getSelectedPoolIdx)
 import Set
 import Url.Builder as UrlB
 
@@ -12,25 +12,35 @@ import Url.Builder as UrlB
 getCoverageUrl :
     { a
         | all_files : Array ( String, Array FunctionName )
-        , selected_file : Int
-        , selected_function : Int
+        , selected_file : Maybe Int
+        , selected_function : Maybe Int
         , input_filter : InputFilter
+        , all_inputs : Array { b | pool_idx : Int }
+        , selected_input : Maybe Int
     }
     -> Maybe String
 getCoverageUrl model =
-    Array.get model.selected_file
-        model.all_files
-        |> Maybe.map Tuple.second
-        |> Maybe.andThen
-            (\functions ->
-                Array.get
-                    model.selected_function
-                    functions
+    Maybe.andThen
+        (\( selected_file, input_filter_string ) ->
+            Array.get selected_file
+                model.all_files
+                |> Maybe.map Tuple.second
+                |> Maybe.andThen
+                    (\functions ->
+                        Maybe.andThen (\i -> Array.get i functions) model.selected_function
+                    )
+                |> Maybe.map (\function_name -> UrlB.relative [ "coverage" ] [ UrlB.string "input_filter" input_filter_string, UrlB.string "function" function_name.name ])
+        )
+        (Maybe.map2
+            Tuple.pair
+            model.selected_file
+            (getInputFilterString
+                model
             )
-        |> Maybe.map (\function_name -> UrlB.relative [ "coverage" ] [ UrlB.string "input_filter" (getInputFilterString model.input_filter), UrlB.string "function" function_name.name ])
+        )
 
 
-getCoverageCmd : (Result Http.Error FunctionCoverage -> msg) -> { a | all_files : Array ( String, Array FunctionName ), selected_file : Int, selected_function : Int, input_filter : InputFilter } -> Cmd msg
+getCoverageCmd : (Result Http.Error FunctionCoverage -> msg) -> { a | all_files : Array ( String, Array FunctionName ), selected_file : Maybe Int, selected_function : Maybe Int, input_filter : InputFilter, all_inputs : Array { b | pool_idx : Int }, selected_input : Maybe Int } -> Cmd msg
 getCoverageCmd getmsg model =
     let
         optreq =
@@ -47,25 +57,44 @@ getCoverageCmd getmsg model =
             Cmd.none
 
 
-getListOfFunctionsUrl : Model -> String
+getListOfFunctionsUrl : Model -> Maybe String
 getListOfFunctionsUrl model =
-    UrlB.relative [ "functions" ]
-        (UrlB.string "input_filter" (getInputFilterString model.input_filter)
-            :: List.map
-                (\filter ->
-                    UrlB.string "function_filter" (getFunctionFilterString filter)
+    Maybe.map
+        (\input_filter_string ->
+            UrlB.relative [ "functions" ]
+                (UrlB.string
+                    "input_filter"
+                    input_filter_string
+                    :: (if model.function_filter.exclude_100 then
+                            [ UrlB.string "function_filter" "Exclude100PercentCoverage" ]
+
+                        else
+                            []
+                       )
+                    ++ (if model.function_filter.exclude_0 then
+                            [ UrlB.string "function_filter" "Exclude0PercentCoverage" ]
+
+                        else
+                            []
+                       )
+                    ++ [ UrlB.string "coverage_kind_filter" (getCoverageKindFilterString model.coverage_kind_filter) ]
                 )
-                (Set.toList model.function_filter)
-            ++ [ UrlB.string "coverage_kind_filter" (getCoverageKindFilterString model.coverage_kind_filter) ]
         )
+        (getInputFilterString model)
 
 
 getFilesAndFunctionsCmd : (Result Http.Error (Array ( String, Array FunctionName )) -> msg) -> Model -> Cmd msg
 getFilesAndFunctionsCmd getmsg model =
-    Http.get
-        { url = getListOfFunctionsUrl model
-        , expect = Http.expectJson getmsg (D.array (D.map2 Tuple.pair (D.index 0 D.string) (D.index 1 (D.array decodeFunctionName))))
-        }
+    case getListOfFunctionsUrl model of
+        Nothing ->
+            {- TODO -}
+            Cmd.none
+
+        Just url ->
+            Http.get
+                { url = url
+                , expect = Http.expectJson getmsg (D.array (D.map2 Tuple.pair (D.index 0 D.string) (D.index 1 (D.array decodeFunctionName))))
+                }
 
 
 getInputCmd : (Result Http.Error String -> msg) -> String -> Cmd msg
@@ -104,24 +133,14 @@ getListOfInputsCmd getmsg =
         }
 
 
-getInputFilterString : InputFilter -> String
-getInputFilterString choice =
-    case choice of
+getInputFilterString : { a | input_filter : InputFilter, all_inputs : Array { b | pool_idx : Int }, selected_input : Maybe Int } -> Maybe String
+getInputFilterString model =
+    case model.input_filter of
         MainModel.AllInputs ->
-            "all"
+            Just "all"
 
-        MainModel.OnlyInput x ->
-            String.fromInt x
-
-
-getFunctionFilterString : FunctionFilter -> String
-getFunctionFilterString choice =
-    case choice of
-        MainModel.Exclude0PercentCoverageFunctions ->
-            "Exclude0PercentCoverage"
-
-        MainModel.Exclude100PercentCoverageFunctions ->
-            "Exclude100PercentCoverage"
+        MainModel.OnlySelectedInput ->
+            Maybe.map String.fromInt (getSelectedPoolIdx model)
 
 
 getCoverageKindFilterString : CoverageKindFilter -> String

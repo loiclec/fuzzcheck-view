@@ -11,14 +11,14 @@ import Coverage as C exposing (FunctionCoverage, FunctionName, Msg(..))
 import Element as E exposing (layout)
 import Element.Background as Background
 import Element.Font as Font
-import Filters
+import Filters exposing (Msg(..))
 import Helpers
 import Html exposing (Html)
 import Html.Attributes as HA
 import Http
 import Json.Decode as D
 import Layout exposing (Layout)
-import ListSelect
+import ListSelect exposing (Msg(..))
 import MainModel exposing (..)
 import Style exposing (..)
 import Task
@@ -108,6 +108,10 @@ type Msg
     | GotInputs (Result Http.Error (Array InputInfo))
     | FetchInput String
     | GotPreviewInput String (Result Http.Error String)
+    | ChangeInputFilter InputFilter
+    | SelectInput Int
+    | ChangeCoverageKindFilter CoverageKindFilter
+    | ChangeFunctionFilter FunctionFilter
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -121,53 +125,94 @@ update msg model =
 
         PreviousFile ->
             let
-                newModel =
-                    { model
-                        | selected_file = Helpers.prevInt model.selected_file
-                    }
+                selected_file =
+                    Helpers.prevOptInt model.selected_file
             in
-            ( newModel
-            , Cmd.none
-            )
+            update (FileSelect (ListSelect.Select selected_file)) model
 
         NextFile ->
             let
-                newModel =
-                    { model
-                        | selected_file = Helpers.nextInt (Array.length model.all_files) model.selected_file
-                    }
+                selected_file =
+                    Helpers.nextOptInt model.selected_file (Array.length model.all_files)
             in
-            ( newModel
-            , Cmd.none
-            )
+            update (FileSelect (ListSelect.Select selected_file)) model
+
+        FileSelect m ->
+            case m of
+                Hover _ ->
+                    ( model, Cmd.none )
+
+                UnHover ->
+                    ( model, Cmd.none )
+
+                UnSelect ->
+                    ( { model | selected_file = Nothing, selected_function = Nothing, function_coverage = Nothing }, Cmd.none )
+
+                Select _ ->
+                    let
+                        files =
+                            ListSelect.update m (MainModel.fileSelectModel model)
+                    in
+                    let
+                        newModel =
+                            { model | selected_file = files.selected_item, selected_function = Nothing, function_coverage = Nothing }
+                    in
+                    ( newModel
+                    , API.getCoverageCmd GotCodeBlock newModel
+                    )
 
         PreviousFunction ->
             let
-                newModel =
-                    { model
-                        | selected_function = Helpers.prevInt model.selected_function
-                    }
+                selected_function =
+                    Helpers.prevOptInt model.selected_function
             in
-            ( newModel
-            , API.getCoverageCmd GotCodeBlock newModel
-            )
+            update (FunctionSelect (ListSelect.Select selected_function)) model
 
         NextFunction ->
-            let
-                newModel =
-                    { model
-                        | selected_function = Helpers.nextInt (Array.length model.all_files) model.selected_function
-                    }
-            in
-            ( newModel
-            , API.getCoverageCmd GotCodeBlock newModel
-            )
+            case model.selected_file of
+                Nothing ->
+                    ( model, Cmd.none )
+
+                Just selected_file ->
+                    let
+                        max =
+                            Maybe.withDefault 0 (Array.get selected_file model.all_files |> Maybe.map Tuple.second |> Maybe.map Array.length)
+                    in
+                    let
+                        selected_function =
+                            Helpers.nextOptInt model.selected_function max
+                    in
+                    update (FunctionSelect (ListSelect.Select selected_function)) model
+
+        FunctionSelect m ->
+            case m of
+                Hover _ ->
+                    ( model, Cmd.none )
+
+                UnHover ->
+                    ( model, Cmd.none )
+
+                UnSelect ->
+                    ( { model | selected_function = Nothing, function_coverage = Nothing }, Cmd.none )
+
+                Select _ ->
+                    let
+                        functions =
+                            ListSelect.update m (MainModel.functionSelectModel model)
+                    in
+                    let
+                        newModel =
+                            { model | selected_function = functions.selected_item }
+                    in
+                    ( newModel
+                    , API.getCoverageCmd GotCodeBlock newModel
+                    )
 
         GotCodeBlock (Ok block) ->
-            ( { model | block = Just block }, Cmd.none )
+            ( { model | function_coverage = Just block }, Cmd.none )
 
         GotCodeBlock (Err _) ->
-            ( { model | block = Nothing }, Cmd.none )
+            ( { model | function_coverage = Nothing }, Cmd.none )
 
         FetchFunctions ->
             ( model, Cmd.none )
@@ -175,38 +220,12 @@ update msg model =
         GotFunctions (Ok functions) ->
             let
                 newModel =
-                    { model | all_files = functions, selected_file = 0, selected_function = 0 }
+                    { model | all_files = functions, selected_file = Nothing, selected_function = Nothing, function_coverage = Nothing }
             in
             ( newModel, API.getCoverageCmd GotCodeBlock newModel )
 
         GotFunctions (Err _) ->
             ( { model | all_files = Array.empty }, Cmd.none )
-
-        FileSelect m ->
-            let
-                files =
-                    ListSelect.update m (MainModel.fileSelectModel model)
-            in
-            let
-                newModel =
-                    { model | selected_file = files.selected_item }
-            in
-            ( newModel
-            , Cmd.none
-            )
-
-        FunctionSelect m ->
-            let
-                functions =
-                    ListSelect.update m (MainModel.functionSelectModel model)
-            in
-            let
-                newModel =
-                    { model | selected_function = functions.selected_item }
-            in
-            ( newModel
-            , API.getCoverageCmd GotCodeBlock newModel
-            )
 
         FetchCodeBlock ->
             ( model
@@ -247,10 +266,43 @@ update msg model =
         GotInputs res ->
             case res of
                 Ok inputs ->
-                    ( { model | all_inputs = inputs, selected_input = 0 }, Cmd.none )
+                    ( { model | all_inputs = inputs, selected_input = Just 0 }, Cmd.none )
 
                 Err _ ->
-                    ( { model | all_inputs = Array.empty, selected_input = 0 }, Cmd.none )
+                    ( { model | all_inputs = Array.empty, selected_input = Just 0 }, Cmd.none )
+
+        ChangeInputFilter filter ->
+            let
+                newModel =
+                    { model | input_filter = filter }
+            in
+            ( newModel, API.getFilesAndFunctionsCmd GotFunctions newModel )
+
+        ChangeCoverageKindFilter filter ->
+            let
+                newModel =
+                    { model | coverage_kind_filter = filter }
+            in
+            ( newModel, API.getFilesAndFunctionsCmd GotFunctions newModel )
+
+        SelectInput idx ->
+            let
+                newModel =
+                    { model | selected_input = Just idx }
+            in
+            case model.input_filter of
+                AllInputs ->
+                    ( newModel, Cmd.none )
+
+                OnlySelectedInput ->
+                    ( newModel, API.getFilesAndFunctionsCmd GotFunctions newModel )
+
+        ChangeFunctionFilter filter ->
+            let
+                newModel =
+                    { model | function_filter = filter }
+            in
+            ( newModel, API.getFilesAndFunctionsCmd GotFunctions newModel )
 
 
 
@@ -298,11 +350,17 @@ mainView model =
                     (E.map
                         (\m ->
                             case m of
-                                Filters.ShowAllCoverage ->
-                                    NoMsg
+                                Filters.ChangeInputFilter x ->
+                                    ChangeInputFilter x
 
-                                Filters.ShowInputCoverage _ ->
-                                    NoMsg
+                                Filters.ChangeCoverageKindFilter x ->
+                                    ChangeCoverageKindFilter x
+
+                                Filters.Exclude0 x ->
+                                    ChangeFunctionFilter { exclude_0 = x, exclude_100 = model.function_filter.exclude_100 }
+
+                                Filters.Exclude100 x ->
+                                    ChangeFunctionFilter { exclude_0 = model.function_filter.exclude_0, exclude_100 = x }
                         )
                         (Filters.view
                             model
@@ -317,7 +375,7 @@ mainView model =
                         (\x ->
                             case x of
                                 ListSelect.Select i ->
-                                    NoMsg
+                                    SelectInput i
 
                                 ListSelect.UnSelect ->
                                     NoMsg
@@ -343,7 +401,7 @@ mainView model =
             [ E.el [ E.alignTop, E.width (E.px model.layout.column_width) ]
                 (Maybe.withDefault
                     E.none
-                    (Maybe.map (\block -> codeBlockWrapper { block = block, layout = model.layout, focused_id = model.counter_id }) model.block)
+                    (Maybe.map (\block -> codeBlockWrapper { block = block, layout = model.layout, focused_id = model.counter_id }) model.function_coverage)
                 )
             , case model.previewed_input of
                 Just ( name, text ) ->
