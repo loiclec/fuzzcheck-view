@@ -17,7 +17,6 @@ type alias Model =
     { layout : Layout.Layout
     , all_files : Array ( String, Array FunctionName )
     , selected_file : Maybe Int
-    , cached_selected_file : Maybe String
     , selected_function : Maybe Int
     , cached_selected_function : Maybe FunctionName
     , function_coverage : Maybe FunctionCoverage
@@ -37,7 +36,6 @@ emptyModel =
     { layout = Layout.initialLayout
     , all_files = Array.empty
     , selected_file = Nothing
-    , cached_selected_file = Nothing
     , selected_function = Nothing
     , cached_selected_function = Nothing
     , function_coverage = Nothing

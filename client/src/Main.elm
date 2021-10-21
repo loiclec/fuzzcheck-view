@@ -202,7 +202,15 @@ update msg model =
                     in
                     let
                         newModel =
-                            { model | selected_function = functions.selected_item }
+                            { model
+                                | selected_function = functions.selected_item
+                                , cached_selected_function =
+                                    model.selected_file
+                                        |> Maybe.andThen (\i -> Array.get i model.all_files)
+                                        |> Maybe.map Tuple.second
+                                        |> Maybe.andThen (\all_functions -> Maybe.map (Tuple.pair all_functions) functions.selected_item)
+                                        |> Maybe.andThen (\( all_functions, selected_function ) -> Array.get selected_function all_functions)
+                            }
                     in
                     ( newModel
                     , API.getCoverageCmd GotCodeBlock newModel
@@ -222,7 +230,12 @@ update msg model =
                 newModel =
                     { model | all_files = functions, selected_file = Nothing, selected_function = Nothing, function_coverage = Nothing }
             in
-            ( newModel, API.getCoverageCmd GotCodeBlock newModel )
+            case newModel.cached_selected_function of
+                Nothing ->
+                    ( newModel, Cmd.none )
+
+                Just _ ->
+                    ( newModel, API.getCoverageCmd GotCodeBlock newModel )
 
         GotFunctions (Err _) ->
             ( { model | all_files = Array.empty }, Cmd.none )

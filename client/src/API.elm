@@ -11,36 +11,23 @@ import Url.Builder as UrlB
 
 getCoverageUrl :
     { a
-        | all_files : Array ( String, Array FunctionName )
-        , selected_file : Maybe Int
-        , selected_function : Maybe Int
+        | cached_selected_function : Maybe FunctionName
         , input_filter : InputFilter
         , all_inputs : Array { b | pool_idx : Int }
         , selected_input : Maybe Int
     }
     -> Maybe String
 getCoverageUrl model =
-    Maybe.andThen
-        (\( selected_file, input_filter_string ) ->
-            Array.get selected_file
-                model.all_files
-                |> Maybe.map Tuple.second
-                |> Maybe.andThen
-                    (\functions ->
-                        Maybe.andThen (\i -> Array.get i functions) model.selected_function
-                    )
-                |> Maybe.map (\function_name -> UrlB.relative [ "coverage" ] [ UrlB.string "input_filter" input_filter_string, UrlB.string "function" function_name.name ])
-        )
-        (Maybe.map2
-            Tuple.pair
-            model.selected_file
-            (getInputFilterString
-                model
+    getInputFilterString model
+        |> Maybe.andThen
+            (\input_filter_string ->
+                Maybe.map
+                    (\function -> UrlB.relative [ "coverage" ] [ UrlB.string "input_filter" input_filter_string, UrlB.string "function" function.name ])
+                    model.cached_selected_function
             )
-        )
 
 
-getCoverageCmd : (Result Http.Error FunctionCoverage -> msg) -> { a | all_files : Array ( String, Array FunctionName ), selected_file : Maybe Int, selected_function : Maybe Int, input_filter : InputFilter, all_inputs : Array { b | pool_idx : Int }, selected_input : Maybe Int } -> Cmd msg
+getCoverageCmd : (Result Http.Error FunctionCoverage -> msg) -> { a | cached_selected_function : Maybe FunctionName, input_filter : InputFilter, all_inputs : Array { b | pool_idx : Int }, selected_input : Maybe Int } -> Cmd msg
 getCoverageCmd getmsg model =
     let
         optreq =
