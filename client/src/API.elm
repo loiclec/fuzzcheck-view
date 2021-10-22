@@ -4,8 +4,7 @@ import Array exposing (Array)
 import Coverage exposing (..)
 import Http
 import Json.Decode as D
-import MainModel exposing (CoverageKindFilter, FunctionFilter, InputFilter, InputInfo, Model, getSelectedPoolIdx)
-import Set
+import MainModel exposing (CoverageKindFilter, InputFilter, InputInfo, Model, getSelectedPoolIdx)
 import Url.Builder as UrlB
 
 

@@ -2,6 +2,7 @@
 #[macro_use]
 extern crate rocket;
 
+use fuzzcheck_view::args::CliArguments;
 use fuzzcheck_view::fuzzcheck::{read_input_corpus, CorpusMap, CoverageMap, SerializedUniqCov};
 use fuzzcheck_view::{
     CodeSpanKind, CoverageKindFilter, CoverageStatus, FunctionCoverage, FunctionFilter, FunctionName, InputFilter,
@@ -193,8 +194,14 @@ async fn serve_static_file(file: PathBuf) -> Option<NamedFile> {
 #[launch]
 fn rocket() -> _ {
     let args = std::env::args().collect::<Vec<_>>();
-    let source_folder = Path::new(&args[1]).to_path_buf();
-    let fuzz_test = args[2].clone();
+
+    let parser = fuzzcheck_view::args::cli_argument_parser();
+    let args = fuzzcheck_view::args::parse_arguments(&parser, &args).unwrap();
+    let CliArguments {
+        directory: source_folder,
+        test: fuzz_test,
+    } = args;
+
     let fuzz_folder = source_folder.join("fuzz").join(fuzz_test);
     let stats_folder = fuzz_folder.join("stats");
     let mut stats_folders = vec![];

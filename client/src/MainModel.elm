@@ -2,11 +2,9 @@ module MainModel exposing (..)
 
 import Array exposing (Array)
 import Coverage exposing (FunctionCoverage, FunctionName)
-import Dict exposing (Dict)
 import Json.Decode as D
 import Layout
 import ListSelect
-import Set exposing (Set)
 
 
 

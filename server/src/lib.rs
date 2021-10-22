@@ -1,3 +1,4 @@
+pub mod args;
 /// module containing definitions from the main fuzzcheck crate
 pub mod fuzzcheck;
 

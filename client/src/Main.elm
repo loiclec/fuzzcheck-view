@@ -79,6 +79,12 @@ keyDecoder =
                 "l" ->
                     NextFunction
 
+                "o" ->
+                    PreviousInput
+
+                "p" ->
+                    NextInput
+
                 _ ->
                     NoMsg
         )
@@ -109,7 +115,9 @@ type Msg
     | FetchInput String
     | GotPreviewInput String (Result Http.Error String)
     | ChangeInputFilter InputFilter
-    | SelectInput Int
+    | PreviousInput
+    | NextInput
+    | SelectInput ListSelect.Msg
     | ChangeCoverageKindFilter CoverageKindFilter
     | ChangeFunctionFilter FunctionFilter
 
@@ -256,7 +264,7 @@ update msg model =
                     )
 
                 Nothing ->
-                    ( { model | counter_id = optid }, Cmd.none )
+                    ( { model | counter_id = optid, previewed_input = Nothing }, Cmd.none )
 
         GotBestInputForCounterId (Ok name) ->
             ( { model | best_input = Just name }, API.getInputCmd (GotPreviewInput name) name )
@@ -298,17 +306,56 @@ update msg model =
             in
             ( newModel, API.getFilesAndFunctionsCmd GotFunctions newModel )
 
-        SelectInput idx ->
+        PreviousInput ->
             let
-                newModel =
-                    { model | selected_input = Just idx }
+                selected_input =
+                    Helpers.prevOptInt model.selected_input
             in
-            case model.input_filter of
-                AllInputs ->
-                    ( newModel, Cmd.none )
+            update (SelectInput (ListSelect.Select selected_input)) model
 
-                OnlySelectedInput ->
-                    ( newModel, API.getFilesAndFunctionsCmd GotFunctions newModel )
+        NextInput ->
+            let
+                selected_input =
+                    Helpers.nextOptInt model.selected_input (Array.length model.all_inputs)
+            in
+            update (SelectInput (ListSelect.Select selected_input)) model
+
+        SelectInput x ->
+            case x of
+                ListSelect.Select idx ->
+                    let
+                        newModel =
+                            { model | selected_input = Just idx }
+                    in
+                    case model.input_filter of
+                        AllInputs ->
+                            ( newModel, Cmd.none )
+
+                        OnlySelectedInput ->
+                            ( newModel, API.getFilesAndFunctionsCmd GotFunctions newModel )
+
+                ListSelect.UnSelect ->
+                    let
+                        newModel =
+                            { model | selected_input = Nothing, previewed_input = Nothing }
+                    in
+                    case model.input_filter of
+                        AllInputs ->
+                            ( newModel, Cmd.none )
+
+                        OnlySelectedInput ->
+                            ( newModel, API.getFilesAndFunctionsCmd GotFunctions newModel )
+
+                ListSelect.Hover i ->
+                    case Array.get i model.all_inputs of
+                        Just name ->
+                            update (FetchInput name.hash) model
+
+                        Nothing ->
+                            ( model, Cmd.none )
+
+                ListSelect.UnHover ->
+                    ( { model | previewed_input = Nothing }, Cmd.none )
 
         ChangeFunctionFilter filter ->
             let
@@ -332,30 +379,6 @@ mainView : Model -> E.Element Msg
 mainView model =
     E.column [ E.alignTop, E.width E.fill, E.spacing largeSpacing, E.padding model.layout.padding, E.height (E.shrink |> E.minimum (model.layout.height + 200)) ]
         [ E.row [ E.alignTop, E.width E.fill, E.spacing model.layout.column_sep ]
-            [ E.column [ E.spacing normalSpacing, E.alignTop, E.width (E.px model.layout.column_width) ]
-                [ E.row [ E.padding normalSpacing, E.width E.fill, Background.color fg, Font.family codeFontFamily, Font.color bgCode, Font.size largeFontSize ]
-                    [ E.el [ E.alignLeft ] (E.text "Files"), E.el [ Font.size smallFontSize, E.alignRight ] (E.text "'a': previous    's': next") ]
-                , E.el [ E.height (E.shrink |> E.maximum 140), E.width (E.fill |> E.minimum model.layout.column_width) ]
-                    (E.map FileSelect
-                        (ListSelect.view
-                            (MainModel.fileSelectModel model)
-                        )
-                    )
-                ]
-            , E.column [ E.spacing normalSpacing, E.alignTop, E.width (E.px model.layout.column_width) ]
-                [ E.row [ E.padding normalSpacing, E.width E.fill, Background.color fg, Font.family codeFontFamily, Font.color bgCode, Font.size largeFontSize ]
-                    [ E.el [ E.alignLeft ] (E.text "Functions"), E.el [ Font.size smallFontSize, E.alignRight ] (E.text "'k': previous    'l': next") ]
-                , E.el [ E.height (E.shrink |> E.maximum 140), E.width (E.px model.layout.column_width) ]
-                    (E.map FunctionSelect
-                        (ListSelect.view
-                            (MainModel.functionSelectModel
-                                model
-                            )
-                        )
-                    )
-                ]
-            ]
-        , E.row [ E.alignTop, E.width E.fill, E.spacing model.layout.column_sep ]
             [ E.column [ E.spacing normalSpacing, E.alignTop, E.width (E.px model.layout.column_width) ]
                 [ E.row [ E.padding normalSpacing, E.width E.fill, Background.color fg, Font.family codeFontFamily, Font.color bgCode, Font.size largeFontSize ]
                     [ E.el [ E.alignLeft ] (E.text "Filters") ]
@@ -382,30 +405,36 @@ mainView model =
                 ]
             , E.column [ E.spacing normalSpacing, E.alignTop, E.width (E.px model.layout.column_width) ]
                 [ E.row [ E.padding normalSpacing, E.width E.fill, Background.color fg, Font.family codeFontFamily, Font.color bgCode, Font.size largeFontSize ]
-                    [ E.el [ E.alignLeft ] (E.text "Inputs") ]
+                    [ E.el [ E.alignLeft ] (E.text "Inputs"), E.el [ Font.size smallFontSize, E.alignRight ] (E.text "'o': previous    'p': next") ]
                 , E.el [ E.height (E.shrink |> E.maximum 140), E.width (E.px model.layout.column_width) ]
-                    (E.map
-                        (\x ->
-                            case x of
-                                ListSelect.Select i ->
-                                    SelectInput i
-
-                                ListSelect.UnSelect ->
-                                    NoMsg
-
-                                ListSelect.Hover i ->
-                                    case Array.get i model.all_inputs of
-                                        Just name ->
-                                            FetchInput name.hash
-
-                                        Nothing ->
-                                            NoMsg
-
-                                ListSelect.UnHover ->
-                                    NoMsg
-                        )
+                    (E.map SelectInput
                         (ListSelect.view
                             { all_items = Array.map .hash model.all_inputs, selected_item = model.selected_input }
+                        )
+                    )
+                ]
+            ]
+        , E.row
+            [ E.alignTop, E.width E.fill, E.spacing model.layout.column_sep ]
+            [ E.column [ E.spacing normalSpacing, E.alignTop, E.width (E.px model.layout.column_width) ]
+                [ E.row [ E.padding normalSpacing, E.width E.fill, Background.color fg, Font.family codeFontFamily, Font.color bgCode, Font.size largeFontSize ]
+                    [ E.el [ E.alignLeft ] (E.text "Files"), E.el [ Font.size smallFontSize, E.alignRight ] (E.text "'a': previous    's': next") ]
+                , E.el [ E.height (E.shrink |> E.maximum 140), E.width (E.fill |> E.minimum model.layout.column_width) ]
+                    (E.map FileSelect
+                        (ListSelect.view
+                            (MainModel.fileSelectModel model)
+                        )
+                    )
+                ]
+            , E.column [ E.spacing normalSpacing, E.alignTop, E.width (E.px model.layout.column_width) ]
+                [ E.row [ E.padding normalSpacing, E.width E.fill, Background.color fg, Font.family codeFontFamily, Font.color bgCode, Font.size largeFontSize ]
+                    [ E.el [ E.alignLeft ] (E.text "Functions"), E.el [ Font.size smallFontSize, E.alignRight ] (E.text "'k': previous    'l': next") ]
+                , E.el [ E.height (E.shrink |> E.maximum 140), E.width (E.px model.layout.column_width) ]
+                    (E.map FunctionSelect
+                        (ListSelect.view
+                            (MainModel.functionSelectModel
+                                model
+                            )
                         )
                     )
                 ]
@@ -419,9 +448,8 @@ mainView model =
             , case model.previewed_input of
                 Just ( name, text ) ->
                     E.column [ E.alignTop, E.alignTop, E.htmlAttribute (HA.style "position" "sticky"), E.htmlAttribute (HA.style "position" "-webkit-sticky"), E.htmlAttribute (HA.style "right" (String.fromInt model.layout.padding ++ "px")), E.htmlAttribute (HA.style "top" "10px"), E.width (E.px model.layout.column_width) ]
-                        [ E.paragraph [ E.padding largeSpacing, Background.color fg, Font.color bgCode, Font.family codeFontFamily, Font.size largeFontSize, E.spacing normalSpacing, E.htmlAttribute (HA.style "white-space" "pre") ]
-                            [ E.html (Html.text (name ++ ":\n\n" ++ text))
-                            ]
+                        [ E.el [ E.width E.fill, E.padding normalSpacing, Font.family codeFontFamily, Font.color bgCode, Background.color fg, Font.size largeFontSize ] (E.text ("Input: " ++ name))
+                        , E.paragraph [ E.height (E.shrink |> E.maximum model.layout.height), E.padding largeSpacing, Background.color bgCode, Font.color fg, Font.family codeFontFamily, Font.size normalFontSize, E.spacing normalSpacing, E.htmlAttribute (HA.style "white-space" "pre") ] [ E.html (Html.text text) ]
                         ]
 
                 Nothing ->
