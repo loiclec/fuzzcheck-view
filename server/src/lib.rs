@@ -106,7 +106,6 @@ impl fuzzcheck::Function {
             name: self.name.clone(),
             demangled_name: rustc_demangle::demangle(&self.name).to_string(),
         };
-
         let file = std::fs::read_to_string(&path).unwrap();
         let lines = file.lines().collect::<Box<[_]>>();
         let sorted_counters = {

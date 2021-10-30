@@ -26,6 +26,7 @@ type alias Model =
     , all_inputs : Array InputInfo
     , selected_input : Maybe Int
     , previewed_input : Maybe ( String, String )
+    , error : Maybe String
     }
 
 
@@ -45,6 +46,7 @@ emptyModel =
     , all_inputs = Array.empty
     , selected_input = Nothing
     , previewed_input = Nothing
+    , error = Nothing
     }
 
 

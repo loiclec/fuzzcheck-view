@@ -227,8 +227,11 @@ update msg model =
         GotCodeBlock (Ok block) ->
             ( { model | function_coverage = Just block }, Cmd.none )
 
+        GotCodeBlock (Err (Http.BadBody e)) ->
+            ( { model | function_coverage = Nothing, error = Just e }, Cmd.none )
+
         GotCodeBlock (Err _) ->
-            ( { model | function_coverage = Nothing }, Cmd.none )
+            ( { model | function_coverage = Nothing, error = Just "Http request failed" }, Cmd.none )
 
         FetchFunctions ->
             ( model, Cmd.none )
@@ -246,7 +249,7 @@ update msg model =
                     ( newModel, API.getCoverageCmd GotCodeBlock newModel )
 
         GotFunctions (Err _) ->
-            ( { model | all_files = Array.empty }, Cmd.none )
+            ( { model | all_files = Array.empty, error = Just "the list of functions could not be retrieved" }, Cmd.none )
 
         FetchCodeBlock ->
             ( model
@@ -264,7 +267,7 @@ update msg model =
                     )
 
                 Nothing ->
-                    ( { model | counter_id = optid, previewed_input = Nothing }, Cmd.none )
+                    ( { model | counter_id = optid }, Cmd.none )
 
         GotBestInputForCounterId (Ok name) ->
             ( { model | best_input = Just name }, API.getInputCmd (GotPreviewInput name) name )
@@ -355,7 +358,7 @@ update msg model =
                             ( model, Cmd.none )
 
                 ListSelect.UnHover ->
-                    ( { model | previewed_input = Nothing }, Cmd.none )
+                    ( model, Cmd.none )
 
         ChangeFunctionFilter filter ->
             let
@@ -378,7 +381,14 @@ view model =
 mainView : Model -> E.Element Msg
 mainView model =
     E.column [ E.alignTop, E.width E.fill, E.spacing largeSpacing, E.padding model.layout.padding, E.height (E.shrink |> E.minimum (model.layout.height + 200)) ]
-        [ E.row [ E.alignTop, E.width E.fill, E.spacing model.layout.column_sep ]
+        [ case model.error of
+            Just e ->
+                E.row [ E.alignTop, E.width E.fill, E.spacing model.layout.column_sep ]
+                    [ E.text e ]
+
+            Nothing ->
+                E.none
+        , E.row [ E.alignTop, E.width E.fill, E.spacing model.layout.column_sep ]
             [ E.column [ E.spacing normalSpacing, E.alignTop, E.width (E.px model.layout.column_width) ]
                 [ E.row [ E.padding normalSpacing, E.width E.fill, Background.color fg, Font.family codeFontFamily, Font.color bgCode, Font.size largeFontSize ]
                     [ E.el [ E.alignLeft ] (E.text "Filters") ]
@@ -449,7 +459,7 @@ mainView model =
                 Just ( name, text ) ->
                     E.column [ E.alignTop, E.alignTop, E.htmlAttribute (HA.style "position" "sticky"), E.htmlAttribute (HA.style "position" "-webkit-sticky"), E.htmlAttribute (HA.style "right" (String.fromInt model.layout.padding ++ "px")), E.htmlAttribute (HA.style "top" "10px"), E.width (E.px model.layout.column_width) ]
                         [ E.el [ E.width E.fill, E.padding normalSpacing, Font.family codeFontFamily, Font.color bgCode, Background.color fg, Font.size largeFontSize ] (E.text ("Input: " ++ name))
-                        , E.paragraph [ E.height (E.shrink |> E.maximum model.layout.height), E.padding largeSpacing, Background.color bgCode, Font.color fg, Font.family codeFontFamily, Font.size normalFontSize, E.spacing normalSpacing, E.htmlAttribute (HA.style "white-space" "pre") ] [ E.html (Html.text text) ]
+                        , E.paragraph [ E.scrollbars, E.height (E.px (model.layout.height - (2 * model.layout.padding))), E.padding largeSpacing, Background.color bgCode, Font.color fg, Font.family codeFontFamily, Font.size normalFontSize, E.spacing normalSpacing, E.htmlAttribute (HA.style "white-space" "pre-wrap") ] [ E.html (Html.text text) ]
                         ]
 
                 Nothing ->

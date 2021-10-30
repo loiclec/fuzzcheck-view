@@ -104,6 +104,7 @@ fn coverage(state: &State<ManagedData>, input_filter: InputFilter, function: Str
     match input_filter {
         InputFilter::All => {
             let function_coverage = state.function_coverage.get(&function).unwrap();
+            println!("{:?}", function_coverage);
             Json(function_coverage.clone())
         }
         InputFilter::Input(input_idx) => {
@@ -198,13 +199,15 @@ fn rocket() -> _ {
     let args = std::env::args().collect::<Vec<_>>();
 
     let parser = fuzzcheck_view::args::cli_argument_parser();
-    let args = fuzzcheck_view::args::parse_arguments(&parser, &args).unwrap();
+    let args = fuzzcheck_view::args::parse_arguments(&parser, &args);
+
     let CliArguments {
-        directory: source_folder,
+        crate_directory,
         test: fuzz_test,
+        workspace_directory: source_folder,
     } = args;
 
-    let fuzz_folder = source_folder.join("fuzz").join(fuzz_test);
+    let fuzz_folder = crate_directory.join("fuzz").join(fuzz_test);
     let stats_folder = fuzz_folder.join("stats");
     let mut stats_folders = vec![];
     for directory in std::fs::read_dir(stats_folder).unwrap() {

@@ -105,15 +105,14 @@ viewCounterIds model =
 viewCodeLines : CodeBlockData a -> E.Element Msg
 viewCodeLines { block, layout, focused_id } =
     E.row
-        [ E.scrollbarX
-        , E.width E.fill
+        [ E.width E.fill
         , Font.color fg
         , Font.size normalFontSize
         , Font.family
             codeFontFamily
         ]
-        [ E.column [ E.alignTop, E.paddingXY smallSpacing normalSpacing, E.width E.shrink, E.spacing normalSpacing, Background.color lighterBgCode ] (List.map viewCodeLineNumber block.lines)
-        , E.column [ E.alignTop, E.paddingXY smallSpacing normalSpacing, E.width E.fill, E.spacing normalSpacing, Background.color bgCode ] (List.map (\line -> viewCodeLine { block = block, layout = layout, focused_id = focused_id, line = line }) block.lines)
+        [ E.column [ E.alignTop, E.paddingXY smallSpacing normalSpacing, E.spacing normalSpacing, Background.color lighterBgCode ] (List.map viewCodeLineNumber block.lines)
+        , E.column [ E.scrollbarX, E.alignTop, E.paddingXY smallSpacing normalSpacing, E.width E.fill, E.spacing normalSpacing, Background.color bgCode ] (List.map (\line -> viewCodeLine { block = block, layout = layout, focused_id = focused_id, line = line }) block.lines)
         ]
 
 
