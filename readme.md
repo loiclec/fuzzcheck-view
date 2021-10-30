@@ -17,7 +17,7 @@ of my sponsors.
 To install it, run:
 
 ```
-cargo install --git https://github.com/loiclec/fuzzcheck-view
+cargo +nightly install --git https://github.com/loiclec/fuzzcheck-view
 ```
 
 After running the fuzz test `tests::fuzz` on the crate `my_crate` with 
