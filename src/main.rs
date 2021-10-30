@@ -2,20 +2,23 @@
 #[macro_use]
 extern crate rocket;
 
+use content::Html;
 use fuzzcheck_view::args::CliArguments;
 use fuzzcheck_view::fuzzcheck::{read_input_corpus, CorpusMap, CoverageMap, SerializedUniqCov};
 use fuzzcheck_view::{
     CodeSpanKind, CoverageKindFilter, CoverageStatus, FunctionCoverage, FunctionFilter, FunctionName, InputFilter,
     InputInfo,
 };
+use rocket::response::content;
 use rocket::serde::json::Json;
 use rocket::{fs::NamedFile, State};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 #[get("/")]
-async fn index() -> Option<NamedFile> {
-    NamedFile::open(Path::new("../resources").join("index.html")).await.ok()
+fn index() -> Html<&'static [u8]> {
+    let html = include_bytes!("resources/index.html");
+    content::Html(html.as_slice())
 }
 
 #[get("/functions?<input_filter>&<function_filter>&<coverage_kind_filter>")]
@@ -104,7 +107,6 @@ fn coverage(state: &State<ManagedData>, input_filter: InputFilter, function: Str
     match input_filter {
         InputFilter::All => {
             let function_coverage = state.function_coverage.get(&function).unwrap();
-            println!("{:?}", function_coverage);
             Json(function_coverage.clone())
         }
         InputFilter::Input(input_idx) => {
