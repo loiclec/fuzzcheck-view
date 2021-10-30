@@ -162,8 +162,10 @@ fn best_input_for_counter(state: &State<ManagedData>, counter: usize) -> Json<St
 #[get("/input?<hash>")]
 fn input(state: &State<ManagedData>, hash: &str) -> Json<String> {
     let data = &state.all_inputs[hash];
-    let decoded: Vec<serde_json::Value> = serde_json::from_slice(&data).unwrap();
-    let string: String = serde_json::from_value(decoded[1].clone()).unwrap();
+    let string = String::from_utf8_lossy(data).to_string();
+
+    // let decoded: Vec<serde_json::Value> = serde_json::from_slice(&data).unwrap();
+    // let string: String = serde_json::from_value(decoded[1].clone()).unwrap();
 
     Json(string)
 }
@@ -211,6 +213,7 @@ fn rocket() -> _ {
             stats_folders.push(directory.path());
         }
     }
+    stats_folders.sort();
     let stats_folder = stats_folders.last().unwrap();
 
     println!("launching on {}", stats_folder.display());
