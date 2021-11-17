@@ -49,7 +49,7 @@ fuzzcheck-view -w "." -d "my_crate" -t "parse_ident::tests::fuzz1"
                 - <timestamp>
                     - ...
                 - <timestamp>
-                    - uniq_cov,json
+                    - simples_cov,json
                     - coverage_sensor.json
                     - world.json
             - ...
@@ -70,7 +70,7 @@ You can choose to visualise the coverage of all test cases combined, or of a
 particular one. You can also choose to filter the list of functions shown to 
 make it easier to navigate.
 
-On the top right is the list of inputs saved by fuzzcheck’s `uniq_cov` pool. 
+On the top right is the list of inputs saved by fuzzcheck’s `simplest_cov` pool. 
 They are sorted by their “interestingness” score. You can hover the mouse over
 an input to see a preview of it underneath, or select one to view its 
 associated code coverage (if you have selected that option in the top left 

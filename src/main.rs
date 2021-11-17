@@ -40,11 +40,11 @@ fn functions(
         return Json(state.functions_per_file.clone().into_iter().collect());
     }
     let input_counters = match input_filter {
-        InputFilter::All => HashSet::<usize>::from_iter(state.uniq_cov.all_hit_counters.iter().copied()),
+        InputFilter::All => HashSet::<usize>::from_iter(state.simplest_cov.all_hit_counters.iter().copied()),
         InputFilter::Input(input_idx) => {
             let all_input_counters = HashSet::<usize>::from_iter(
                 state
-                    .uniq_cov
+                    .simplest_cov
                     .counters_for_input
                     .iter()
                     .find(|(idx, _)| *idx == input_idx)
@@ -57,7 +57,7 @@ fn functions(
                 CoverageKindFilter::All => all_input_counters,
                 CoverageKindFilter::LeastComplex => {
                     let mut input_counters = all_input_counters;
-                    for (counter_idx, best_input_idx) in state.uniq_cov.best_for_counter.iter() {
+                    for (counter_idx, best_input_idx) in state.simplest_cov.best_for_counter.iter() {
                         // 1. this is the right input
                         if input_counters.contains(counter_idx) {
                             // 2. but it is not the least complex
@@ -111,7 +111,7 @@ fn coverage(state: &State<ManagedData>, input_filter: InputFilter, function: Str
         }
         InputFilter::Input(input_idx) => {
             let counters = &state
-                .uniq_cov
+                .simplest_cov
                 .counters_for_input
                 .iter()
                 .find(|x| x.0 == input_idx)
@@ -131,7 +131,7 @@ fn coverage(state: &State<ManagedData>, input_filter: InputFilter, function: Str
                         CodeSpanKind::Untracked => {}
                         CodeSpanKind::Tracked { id, status } => {
                             *status = if counters.contains(&id) {
-                                if input_idx == state.uniq_cov.best_for_counter.iter().find(|(x, _)| x == id).unwrap().1
+                                if input_idx == state.simplest_cov.best_for_counter.iter().find(|(x, _)| x == id).unwrap().1
                                 {
                                     CoverageStatus::Best
                                 } else {
@@ -152,7 +152,7 @@ fn coverage(state: &State<ManagedData>, input_filter: InputFilter, function: Str
 #[get("/best_input?<counter>")]
 fn best_input_for_counter(state: &State<ManagedData>, counter: usize) -> Json<String> {
     let pool_idx = state
-        .uniq_cov
+        .simplest_cov
         .best_for_counter
         .iter()
         .find(|x| x.0 == counter)
@@ -176,7 +176,7 @@ fn input(state: &State<ManagedData>, hash: &str) -> Json<String> {
 #[get("/inputs")]
 fn inputs(state: &State<ManagedData>) -> Json<Vec<InputInfo>> {
     let inputs = state
-        .uniq_cov
+        .simplest_cov
         .ranked_inputs
         .iter()
         .map(|&pool_idx| {
@@ -234,15 +234,15 @@ fn rocket() -> _ {
         });
         coverage_map
     };
-    let uniq_cov: SerializedUniqCov = {
-        let uniq_cov_path = stats_folder.join("uniq_cov.json");
-        let uniq_cov = std::fs::read(&uniq_cov_path).expect(&format!("can't read {}", uniq_cov_path.display()));
-        serde_json::from_slice(&uniq_cov).expect("can't parse uniq_cov")
+    let simplest_cov: SerializedUniqCov = {
+        let simplest_cov_path = stats_folder.join("simplest_cov.json");
+        let simplest_cov = std::fs::read(&simplest_cov_path).expect(&format!("can't read {}", simplest_cov_path.display()));
+        serde_json::from_slice(&simplest_cov).expect("can't parse simplest_cov")
     };
     let corpus_map: CorpusMap = {
-        let uniq_cov_path = stats_folder.join("world.json");
-        let uniq_cov = std::fs::read(&uniq_cov_path).expect(&format!("can't read {}", uniq_cov_path.display()));
-        serde_json::from_slice(&uniq_cov).expect("can't parse world")
+        let simplest_cov_path = stats_folder.join("world.json");
+        let simplest_cov = std::fs::read(&simplest_cov_path).expect(&format!("can't read {}", simplest_cov_path.display()));
+        serde_json::from_slice(&simplest_cov).expect("can't parse world")
     };
     let all_inputs = read_input_corpus(&fuzz_folder.join("corpus"));
 
@@ -254,7 +254,7 @@ fn rocket() -> _ {
                 match &mut span.kind {
                     CodeSpanKind::Untracked => {}
                     CodeSpanKind::Tracked { id, status } => {
-                        *status = if uniq_cov.all_hit_counters.contains(&id) {
+                        *status = if simplest_cov.all_hit_counters.contains(&id) {
                             CoverageStatus::Hit
                         } else {
                             CoverageStatus::NotHit
@@ -281,7 +281,7 @@ fn rocket() -> _ {
     }
     let data = ManagedData {
         coverage_map,
-        uniq_cov,
+        simplest_cov,
         functions_per_file,
         function_coverage,
         corpus_map,
@@ -306,7 +306,7 @@ struct ManagedData {
     coverage_map: CoverageMap,
     functions_per_file: HashMap<String, Vec<FunctionName>>,
     function_coverage: HashMap<String, FunctionCoverage>,
-    uniq_cov: SerializedUniqCov,
+    simplest_cov: SerializedUniqCov,
     corpus_map: CorpusMap,
     all_inputs: HashMap<String, Vec<u8>>,
 }
