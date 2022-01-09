@@ -129,9 +129,26 @@ fn coverage(state: &State<ManagedData>, input_filter: InputFilter, function: Str
                 for span in line.spans.iter_mut() {
                     match &mut span.kind {
                         CodeSpanKind::Untracked => {}
+                        CodeSpanKind::Inferred { inferred_from, status } => {
+                            *status = if counters
+                            .iter()
+                            .any(|hit_id| inferred_from.contains(hit_id))
+                            {
+                                CoverageStatus::Hit
+                            } else {
+                                CoverageStatus::NotHit
+                            }
+                        }
                         CodeSpanKind::Tracked { id, status } => {
                             *status = if counters.contains(&id) {
-                                if input_idx == state.simplest_cov.best_for_counter.iter().find(|(x, _)| x == id).unwrap().1
+                                if input_idx
+                                    == state
+                                        .simplest_cov
+                                        .best_for_counter
+                                        .iter()
+                                        .find(|(x, _)| x == id)
+                                        .unwrap()
+                                        .1
                                 {
                                     CoverageStatus::Best
                                 } else {
@@ -236,12 +253,14 @@ fn rocket() -> _ {
     };
     let simplest_cov: SerializedUniqCov = {
         let simplest_cov_path = stats_folder.join("simplest_cov.json");
-        let simplest_cov = std::fs::read(&simplest_cov_path).expect(&format!("can't read {}", simplest_cov_path.display()));
+        let simplest_cov =
+            std::fs::read(&simplest_cov_path).expect(&format!("can't read {}", simplest_cov_path.display()));
         serde_json::from_slice(&simplest_cov).expect("can't parse simplest_cov")
     };
     let corpus_map: CorpusMap = {
         let simplest_cov_path = stats_folder.join("world.json");
-        let simplest_cov = std::fs::read(&simplest_cov_path).expect(&format!("can't read {}", simplest_cov_path.display()));
+        let simplest_cov =
+            std::fs::read(&simplest_cov_path).expect(&format!("can't read {}", simplest_cov_path.display()));
         serde_json::from_slice(&simplest_cov).expect("can't parse world")
     };
     let all_inputs = read_input_corpus(&fuzz_folder.join("corpus"));
@@ -253,6 +272,17 @@ fn rocket() -> _ {
             for span in line.spans.iter_mut() {
                 match &mut span.kind {
                     CodeSpanKind::Untracked => {}
+                    CodeSpanKind::Inferred { inferred_from, status } => {
+                        *status = if simplest_cov
+                            .all_hit_counters
+                            .iter()
+                            .any(|hit_id| inferred_from.contains(hit_id))
+                        {
+                            CoverageStatus::Hit
+                        } else {
+                            CoverageStatus::NotHit
+                        }
+                    }
                     CodeSpanKind::Tracked { id, status } => {
                         *status = if simplest_cov.all_hit_counters.contains(&id) {
                             CoverageStatus::Hit

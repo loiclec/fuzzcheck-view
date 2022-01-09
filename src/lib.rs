@@ -2,7 +2,7 @@ pub mod args;
 /// module containing definitions from the main fuzzcheck crate
 pub mod fuzzcheck;
 
-use fuzzcheck::Counter;
+use fuzzcheck::{CommonCounter, CommonCounterWithSingleRegion, CounterId};
 use rocket::form::FromFormField;
 use serde::{Deserialize, Serialize};
 
@@ -11,7 +11,14 @@ use crate::fuzzcheck::Region;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum CodeSpanKind {
     Untracked,
-    Tracked { id: usize, status: CoverageStatus },
+    Inferred {
+        inferred_from: Vec<usize>,
+        status: CoverageStatus,
+    },
+    Tracked {
+        id: usize,
+        status: CoverageStatus,
+    },
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum CoverageStatus {
@@ -109,9 +116,26 @@ impl fuzzcheck::Function {
         let file = std::fs::read_to_string(&path).unwrap();
         let lines = file.lines().collect::<Box<[_]>>();
         let sorted_counters = {
-            let mut xs = self.counters.clone();
-            xs.sort_by(|c1, c2| (c1.region.lines.0, c1.region.cols.0).cmp(&(c2.region.lines.0, c2.region.cols.0)));
-            xs
+            let common_counters = self
+                .counters
+                .clone()
+                .into_iter()
+                .map(|c| CommonCounter {
+                    id: CounterId::Physical { id: c.id },
+                    regions: c.regions,
+                })
+                .chain(self.inferred_counters.clone().into_iter().map(|c| CommonCounter {
+                    id: CounterId::Inferred {
+                        from: c.from_counter_ids,
+                    },
+                    regions: c.regions,
+                }))
+                .collect::<Vec<_>>();
+            let mut counters: Vec<CommonCounterWithSingleRegion> =
+                common_counters.into_iter().flat_map(split_counter_by_region).collect();
+            counters
+                .sort_by(|c1, c2| (c1.region.lines.0, c1.region.cols.0).cmp(&(c2.region.lines.0, c2.region.cols.0)));
+            counters
         };
 
         if sorted_counters.is_empty() {
@@ -156,18 +180,12 @@ impl fuzzcheck::Function {
                         });
                         code_lines[r.lines.0 - fst_lineno].spans.push(CodeSpan {
                             text: " ⦿ ".to_owned(),
-                            kind: CodeSpanKind::Tracked {
-                                id: counter.id,
-                                status: CoverageStatus::Unknown,
-                            },
+                            kind: unknown_code_span_kind_from_counter_id(counter.id.clone()),
                         });
                     } else {
                         code_lines[r.lines.0 - fst_lineno].spans.push(CodeSpan {
                             text,
-                            kind: CodeSpanKind::Tracked {
-                                id: counter.id,
-                                status: CoverageStatus::Unknown,
-                            },
+                            kind: unknown_code_span_kind_from_counter_id(counter.id.clone()),
                         });
                     }
                 }
@@ -184,6 +202,19 @@ impl fuzzcheck::Function {
             lines: code_lines,
             counter_ids,
         }
+    }
+}
+
+fn unknown_code_span_kind_from_counter_id(id: CounterId) -> CodeSpanKind {
+    match id {
+        CounterId::Physical { id } => CodeSpanKind::Tracked {
+            id,
+            status: CoverageStatus::Unknown,
+        },
+        CounterId::Inferred { from } => CodeSpanKind::Inferred {
+            inferred_from: from,
+            status: CoverageStatus::Unknown,
+        },
     }
 }
 
@@ -238,8 +269,16 @@ fn region_between_regions(a: &Region, b: &Region) -> Region {
 fn region_is_empty(region: &Region) -> bool {
     region.lines.1 < region.lines.0 || (region.lines.1 == region.lines.0 && region.cols.1 <= region.cols.0)
 }
-
-fn split_counter_by_line(c: Counter) -> Vec<Counter> {
+fn split_counter_by_region(c: CommonCounter) -> Vec<CommonCounterWithSingleRegion> {
+    c.regions
+        .into_iter()
+        .map(|region| CommonCounterWithSingleRegion {
+            id: c.id.clone(),
+            region,
+        })
+        .collect()
+}
+fn split_counter_by_line(c: CommonCounterWithSingleRegion) -> Vec<CommonCounterWithSingleRegion> {
     let mut counters = vec![];
     for l in c.region.lines.0..=c.region.lines.1 {
         let start_col = if l == c.region.lines.0 { c.region.cols.0 } else { 0 };
@@ -249,8 +288,8 @@ fn split_counter_by_line(c: Counter) -> Vec<Counter> {
             usize::MAX
         };
 
-        counters.push(Counter {
-            id: c.id,
+        counters.push(CommonCounterWithSingleRegion {
+            id: c.id.clone(),
             region: Region {
                 lines: (l, l),
                 cols: (start_col, end_col),

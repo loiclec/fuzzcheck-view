@@ -22,6 +22,7 @@ pub struct Function {
     pub name: String,
     pub file: PathBuf,
     pub counters: Vec<Counter>,
+    pub inferred_counters: Vec<InferredCounter>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -33,6 +34,28 @@ pub struct Region {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Counter {
     pub id: usize,
+    pub regions: Vec<Region>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct InferredCounter {
+    pub regions: Vec<Region>,
+    pub from_counter_ids: Vec<usize>,
+}
+#[derive(Clone, Debug)]
+pub struct CommonCounter {
+    pub id: CounterId,
+    pub regions: Vec<Region>,
+}
+
+#[derive(Clone, Debug)]
+pub enum CounterId {
+    Physical { id: usize },
+    Inferred { from: Vec<usize> },
+}
+
+#[derive(Clone, Debug)]
+pub struct CommonCounterWithSingleRegion {
+    pub id: CounterId,
     pub region: Region,
 }
 

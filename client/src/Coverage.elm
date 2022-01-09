@@ -39,6 +39,7 @@ type alias CodeSpan =
 type CodeSpanKind
     = Untracked
     | Tracked Int CoverageStatus
+    | Inferred CoverageStatus
 
 
 type CoverageStatus
@@ -147,6 +148,18 @@ viewCodeSpan { block, layout, focused_id, span } =
         Tracked id status ->
             viewTrackedCodeSpan { block = block, layout = layout, focused_id = focused_id, id = id, status = status, text = span.text }
 
+        Inferred status ->
+            let
+                ( fgColor, bgColor ) =
+                    let
+                        color =
+                            coverageStatusColor status
+                    in
+                    ( color, bgCode )
+            in
+            E.el [ Font.color fgColor, Background.color bgColor ]
+                (E.text span.text)
+
 
 viewTrackedCodeSpan : CodeBlockData { a | id : Int, status : CoverageStatus, text : String, focused_id : Maybe Int } -> E.Element Msg
 viewTrackedCodeSpan model =
@@ -229,6 +242,7 @@ decodeCodeSpanKind =
                             D.fail <| "failed to decode CodeSpanKind"
                 )
         , D.field "Tracked" (D.map2 Tracked (D.field "id" D.int) (D.field "status" decodeCoverageStatus))
+        , D.field "Inferred" (D.map Inferred (D.field "status" decodeCoverageStatus))
         ]
 
 
