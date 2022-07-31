@@ -2,23 +2,22 @@
 #[macro_use]
 extern crate rocket;
 
-use content::Html;
 use fuzzcheck_view::args::CliArguments;
 use fuzzcheck_view::fuzzcheck::{read_input_corpus, CorpusMap, CoverageMap, SerializedUniqCov};
 use fuzzcheck_view::{
     CodeSpanKind, CoverageKindFilter, CoverageStatus, FunctionCoverage, FunctionFilter, FunctionName, InputFilter,
     InputInfo,
 };
-use rocket::response::content;
+use rocket::response::content::RawHtml;
 use rocket::serde::json::Json;
 use rocket::{fs::NamedFile, State};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 #[get("/")]
-fn index() -> Html<&'static [u8]> {
+fn index() -> RawHtml<&'static [u8]> {
     let html = include_bytes!("resources/index.html");
-    content::Html(html.as_slice())
+    RawHtml(html.as_slice())
 }
 
 #[get("/functions?<input_filter>&<function_filter>&<coverage_kind_filter>")]
@@ -130,10 +129,7 @@ fn coverage(state: &State<ManagedData>, input_filter: InputFilter, function: Str
                     match &mut span.kind {
                         CodeSpanKind::Untracked => {}
                         CodeSpanKind::Inferred { inferred_from, status } => {
-                            *status = if counters
-                            .iter()
-                            .any(|hit_id| inferred_from.contains(hit_id))
-                            {
+                            *status = if counters.iter().any(|hit_id| inferred_from.contains(hit_id)) {
                                 CoverageStatus::Hit
                             } else {
                                 CoverageStatus::NotHit
@@ -302,12 +298,12 @@ fn rocket() -> _ {
         entry.push(c.name.clone());
         let name = c.name.clone();
         let old = function_coverage.insert(c.name.name.clone(), c);
-        assert!(
-            old.is_none(),
-            "old: {:?}\nnew: {:?}",
-            old.unwrap(),
-            &function_coverage[&name.name]
-        );
+        // assert!(
+        //     old.is_none(),
+        //     "old: {:?}\nnew: {:?}",
+        //     old.unwrap(),
+        //     &function_coverage[&name.name]
+        // );
     }
     let data = ManagedData {
         coverage_map,
